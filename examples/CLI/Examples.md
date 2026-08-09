@@ -1,4 +1,7 @@
-[Go back to the Main Documentation](https://github.com/drawrowfly/tiktok-scraper/blob/master/README.md)
+> **LEGACY:** These examples belong to the archived Node.js CLI. They do not
+> describe the current gallery-dl Docker wrapper. See the repository README.
+
+[Go back to the Main Documentation](../../README.md)
 
 ## Terminal Examples
 

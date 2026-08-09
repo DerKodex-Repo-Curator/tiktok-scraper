@@ -1,4 +1,7 @@
-[Go back to the Main Documentation](https://github.com/drawrowfly/tiktok-scraper/blob/master/README.md)
+> **LEGACY:** This history interface belongs to the archived Node.js CLI. The
+> current Docker wrapper uses gallery-dl's SQLite archive and retry queue.
+
+[Go back to the Main Documentation](../../README.md)
 
 ## Manage Download History
 

@@ -1,4 +1,7 @@
-[Go back to the Main Documentation](https://github.com/drawrowfly/tiktok-scraper/blob/master/README.md)
+> **LEGACY:** This batch grammar belongs to the archived Node.js CLI. It is not
+> accepted by the current gallery-dl Docker wrapper. See the repository README.
+
+[Go back to the Main Documentation](../../README.md)
 
 ## Batch Scrape And Download Example
 
