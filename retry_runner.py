@@ -309,7 +309,7 @@ def load():
 
 def run(
     command, queue, queue_target=None, manifest=None, media_delay=None,
-    sleep=time.sleep, rng=random.uniform, new_items=None,
+    sleep=time.sleep, rng=random.uniform, new_items=None, failure_budget=None,
 ):
     failed = set()
     completed = set()
@@ -319,6 +319,8 @@ def run(
     failure_kind = None
     terminal_media_seen = False
     quota_reached = False
+    budget_reached = False
+    retryable_events = 0
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, errors="replace", bufsize=1, start_new_session=True,
@@ -368,6 +370,7 @@ def run(
             continue
         print(redact_secrets(line), end="", flush=True)
         failure_kind = classify_failure(line, failure_kind)
+        retryable_line = RETRYABLE_FAILURE.search(line) is not None
         if PROFILE_CHALLENGE.search(line):
             profile_challenge = True
         if PROFILE_TERMINAL_FAILURE.search(line):
@@ -383,6 +386,17 @@ def run(
                 queue[video_id]["target"] = queue_target
             save(queue)  # Survives an interruption immediately after discovery.
             record_status(manifest, queue_target, "FAILED", video_id, "")
+        if retryable_line and failure_budget is not None:
+            retryable_events += 1
+            if retryable_events >= failure_budget:
+                print(
+                    f"tiktok-dl: retryable failure budget reached ({failure_budget}); "
+                    "stopping this profile attempt",
+                    file=sys.stderr,
+                )
+                budget_reached = True
+                terminate_process_tree(process)
+                break
     # A challenge warning can be followed by a successful fallback or an
     # archive hit. A terminal after/skip event wins and must not stay queued.
     for item in completed:
@@ -392,12 +406,14 @@ def run(
     failed.difference_update(completed)
     if quota_reached:
         rc = 0
+    elif budget_reached:
+        rc = 1
     else:
         rc = process.wait()
     # A profile-level challenge happens before post IDs exist. If gallery-dl
     # emitted no terminal item event, treat even rc=0 as an incomplete scan.
     profile_failed = False if quota_reached else (
-        profile_terminal_failure or (profile_challenge and not completed)
+        budget_reached or profile_terminal_failure or (profile_challenge and not completed)
     )
     return rc, failed, counts, profile_failed, failure_kind
 
@@ -415,6 +431,7 @@ def run_profile(
     totals = {"DOWNLOADED": 0, "SKIPPED": 0, "FAILED": 0}
     attempts = max(1, int(os.environ.get("PROFILE_MAX_ATTEMPTS", "3")))
     base_delay = max(0.0, float(os.environ.get("PROFILE_BASE_DELAY", "5")))
+    failure_budget = max(1, int(os.environ.get("PROFILE_FAILURE_BUDGET", "3")))
     force_fallback = os.environ.get("TIKTOK_FORCE_FALLBACK", "").lower() in ("1", "true", "yes")
 
     last_rc, profile_failed, failure_kind = 1, True, None
@@ -429,6 +446,7 @@ def run_profile(
             last_rc, _, counts, profile_failed, failure_kind = run(
                 [binary, *attempt_common, *extra, url], queue, url, manifest,
                 media_delay=media_delay, new_items=remaining_quota(),
+                failure_budget=failure_budget,
             )
             add_counts(totals, counts)
             if not profile_failed:
@@ -466,6 +484,7 @@ def run_profile(
     last_rc, _, counts, profile_failed, failure_kind = run(
         [binary, *fallback_common, *fallback, *extra, url], queue, url, manifest,
         media_delay=media_delay, new_items=remaining_quota(),
+        failure_budget=failure_budget,
     )
     add_counts(totals, counts)
     effective_rc = 1 if profile_failed and last_rc == 0 else last_rc

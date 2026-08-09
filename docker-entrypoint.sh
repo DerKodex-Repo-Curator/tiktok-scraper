@@ -17,7 +17,8 @@ JSON and CSV download manifests are maintained in /downloads automatically.
 skips do not count. It cannot be combined with gallery-dl --range.
 Optional settings: SLEEP_REQUEST (2-5 request pacing), MEDIA_DELAY (fixed or
 random inter-media seconds, for example 8-12), PROFILE_MAX_ATTEMPTS (3),
-PROFILE_BASE_DELAY (5 seconds), RETRY_MAX_ATTEMPTS (4), and
+PROFILE_BASE_DELAY (5 seconds), PROFILE_FAILURE_BUDGET (3 retryable signals),
+RETRY_MAX_ATTEMPTS (4), and
 RETRY_BASE_DELAY (5 seconds). SOCKS proxies rotate Tor identities on retry by
 default; configure TOR_ROTATE_ON_RETRY and RETRY_JITTER as needed.
 EOF

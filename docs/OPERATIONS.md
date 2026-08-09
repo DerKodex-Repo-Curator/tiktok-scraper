@@ -87,11 +87,13 @@ files contain active credentials; never commit or publish them.
 | `MEDIA_DELAY` | Optional fixed seconds or random range between terminal media, for example `8-12`; empty disables it |
 | `PROFILE_MAX_ATTEMPTS` | Native profile attempts; default `3` |
 | `PROFILE_BASE_DELAY` | Profile retry base delay; default `5` seconds |
+| `PROFILE_FAILURE_BUDGET` | Retryable failure signals allowed per profile subprocess; default `3` |
 | `RETRY_MAX_ATTEMPTS` | Persistent direct-video attempts; default `4` |
 | `RETRY_BASE_DELAY` | Direct retry base delay; default `5` seconds |
 | `TIKTOK_FORCE_FALLBACK` | `1`, `true`, or `yes` skips native profile attempts |
 | `COOKIES_FILE` | In-container cookie file path |
 | `DOWNLOADS_DIR` | Runtime state directory; image default is `/downloads` |
+| `GALLERY_DL_BIN` | gallery-dl executable name/path; default `gallery-dl` |
 
 `MEDIA_DELAY` applies exactly once before a subsequent media item after a
 downloaded, archive-skipped, or failed non-avatar item. It does not replace
@@ -102,7 +104,10 @@ media per target. `N` is a positive integer. Archive skips do not count, and
 content exhaustion below the quota is successful. `--new-items` and gallery-dl
 `--range` are intentionally rejected together because they express different
 limits.
-| `GALLERY_DL_BIN` | gallery-dl executable name/path; default `gallery-dl` |
+
+The pinned gallery-dl fork streams profile pages. `--new-items` can therefore
+stop further pagination once N new downloads complete, while archive skips
+continue through subsequent items and pages without consuming the quota.
 
 ## Smoke tests
 

@@ -28,7 +28,7 @@ The Dockerfile fetches and verifies these default commits:
 
 | Component | Repository | Commit |
 |---|---|---|
-| gallery-dl | `DerKodex-Repo-Curator/gallery-dl-official` | `48f9f648a5123432458acf121efa9151fda8eba8` |
+| gallery-dl | `DerKodex-Repo-Curator/gallery-dl-official` | `1b68ec56f35651753c4fc527685f56f3a1bd63ee` |
 | yt-dlp | `DerKodex-Repo-Curator/yt-dlp` | `5d6b8c8cd19785c3086ae3a9ec618c45e25eb3bc` |
 
 The gallery-dl repository is private. BuildKit mounts `github_token` only for
@@ -66,6 +66,11 @@ Profile extraction defaults to three attempts with exponential delay based on
 video failures recorded in the queue default to four persistent attempts based
 on `RETRY_BASE_DELAY`. `RETRY_JITTER` controls delay jitter.
 
+Each profile subprocess also has a retryable-failure budget, default `3`.
+Repeated challenge, 403/429, timeout, temporary-unavailable, or connection-reset
+signals terminate and reap that attempt. Existing backoff, Tor rotation, and
+fallback then take over instead of allowing a request storm.
+
 `SLEEP_REQUEST` is passed unchanged to gallery-dl for HTTP-request pacing.
 Optional `MEDIA_DELAY` is wrapper-level media pacing. A gallery-dl `prepare`
 event marks the next media: after a prior non-avatar `DOWNLOADED`, `SKIPPED`, or
@@ -82,6 +87,15 @@ remains successful even when older retry-queue entries
 remain. Batch mode applies a fresh quota independently to each sequential
 target. Native extraction, fallback, proxying, pacing, archive, queue, and
 manifest handling otherwise use the same pipeline.
+
+### Streaming profile pagination
+
+The pinned gallery-dl fork yields each TikTok profile page before requesting the
+next. Gallery-dl therefore performs archive checks and emits terminal media
+events between pages. When `--new-items` reaches its quota, the wrapper stops the
+process group before the extractor requests the remaining profile history.
+Cursor order, duplicate suppression, range/media filters, and legacy endpoint
+fallback remain inside the extractor.
 
 For SOCKS proxies, Tor rotation defaults on. A JavaScript challenge, HTTP
 403/429, timeout, temporary failure, or connection reset assigns fresh SOCKS

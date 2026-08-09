@@ -43,7 +43,8 @@ class MediaDelayTests(unittest.TestCase):
         ]
         process = self.Process(lines)
         sleeper = mock.Mock()
-        with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process):
+        with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process), \
+                mock.patch.object(retry_runner, "save"):
             _, _, counts, _, _ = retry_runner.run(
                 ["gallery-dl"], {}, media_delay=(2.0, 5.0),
                 sleep=sleeper, rng=lambda low, high: 3.5,
@@ -176,6 +177,25 @@ class NewItemsTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].kwargs["new_items"], 2)
         self.assertEqual(run.call_args_list[1].kwargs["new_items"], 1)
 
+    def test_profile_failure_budget_stops_challenge_storm_and_requests_retry(self):
+        process = self.Process([
+            "[tiktok][warning] 1111111111: Failed to solve JavaScript challenge\n",
+            "[tiktok][warning] 2222222222: Failed to solve JavaScript challenge\n",
+            "[tiktok][warning] 3333333333: Failed to solve JavaScript challenge\n",
+        ], rc=-15)
+        with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process), \
+                mock.patch.object(retry_runner, "save"):
+            rc, failed, counts, profile_failed, failure_kind = retry_runner.run(
+                ["gallery-dl"], {}, failure_budget=2
+            )
+
+        self.assertEqual(rc, 1)
+        self.assertTrue(process.terminated)
+        self.assertEqual(failed, {"1111111111", "2222222222"})
+        self.assertEqual(counts["FAILED"], 2)
+        self.assertTrue(profile_failed)
+        self.assertEqual(failure_kind, "retryable")
+
 
 class ProfileFallbackTests(unittest.TestCase):
     def test_docker_context_is_allowlisted_to_prevent_local_data_and_secret_leaks(self):
@@ -190,7 +210,7 @@ class ProfileFallbackTests(unittest.TestCase):
 
     def test_dockerfile_pins_forks_and_uses_buildkit_secret_for_private_fetch(self):
         dockerfile = Path(__file__).with_name("Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("GALLERY_DL_REF=48f9f648a5123432458acf121efa9151fda8eba8", dockerfile)
+        self.assertIn("GALLERY_DL_REF=1b68ec56f35651753c4fc527685f56f3a1bd63ee", dockerfile)
         self.assertIn("YT_DLP_REF=5d6b8c8cd19785c3086ae3a9ec618c45e25eb3bc", dockerfile)
         self.assertIn("--mount=type=secret,id=github_token,required=true", dockerfile)
         self.assertIn('test "$(git -C gallery-dl rev-parse HEAD)" = "$GALLERY_DL_REF"', dockerfile)

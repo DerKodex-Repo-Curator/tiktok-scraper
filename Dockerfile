@@ -3,7 +3,7 @@
 FROM python:3.14-slim AS sources
 
 ARG GALLERY_DL_REPOSITORY=https://github.com/DerKodex-Repo-Curator/gallery-dl-official.git
-ARG GALLERY_DL_REF=48f9f648a5123432458acf121efa9151fda8eba8
+ARG GALLERY_DL_REF=1b68ec56f35651753c4fc527685f56f3a1bd63ee
 ARG YT_DLP_REPOSITORY=https://github.com/DerKodex-Repo-Curator/yt-dlp.git
 ARG YT_DLP_REF=5d6b8c8cd19785c3086ae3a9ec618c45e25eb3bc
 

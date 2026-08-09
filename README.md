@@ -82,6 +82,10 @@ Exhausting the profile first is still successful and reports the real download
 count. Do not combine it with gallery-dl's native `--range`; the wrapper rejects
 that ambiguous combination instead of guessing which limit should win.
 
+The pinned gallery-dl fork streams TikTok profile pages into archive checks and
+media processing. Consequently `--new-items` can stop pagination as soon as its
+new-download quota is satisfied; it does not need to enumerate the full profile.
+
 ## Documentation
 
 | Need | Read |

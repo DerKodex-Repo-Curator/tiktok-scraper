@@ -39,6 +39,11 @@ settings, the next attempt receives new SOCKS credentials for Tor
 `[BACKEND]` to see whether native gallery-dl or the yt-dlp enumerator completed
 the profile. Repeated rejection can still end in `result=FAILED`.
 
+One profile subprocess stops after `PROFILE_FAILURE_BUDGET` retryable signals
+(default `3`), then uses normal backoff, Tor rotation when configured, and
+fallback. The pinned fork streams profile pages, so reaching a new-item quota
+also stops later pagination requests.
+
 ## Profile is private, missing, or unsupported
 
 These are permanent failures. The wrapper does not rotate Tor identity for
@@ -57,6 +62,11 @@ gallery-dl semantics and remains available.
 `--new-items` requires one positive integer. It cannot be combined with
 gallery-dl `--range`; choose the new-download quota or the native positional
 range explicitly. In batch mode the quota resets for each target.
+
+If many pagination pages appear before the first `SKIPPED` or `DOWNLOADED`,
+verify the image uses the gallery-dl SHA documented in Architecture. Older image
+pins accumulated the complete profile before returning media URLs and must be
+rebuilt rather than repaired through archive changes.
 
 ## Batch file is rejected
 
