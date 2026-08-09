@@ -13,3 +13,13 @@ yarn.lock
 yarn-error.log
 proxy
 bulk
+
+# Local downloader runtime data and secrets
+downloads/
+targets.txt
+cookies.txt
+.env
+.env.*
+!.env.example
+.atl/
+.codegraph/
