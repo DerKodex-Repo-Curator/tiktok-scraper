@@ -521,7 +521,7 @@ def run_profile(
     video_format = os.environ.get("VIDEO_FORMAT", "best")
     socket_timeout = int(os.environ.get("PROFILE_TIMEOUT", "45")) // 2
     ytdlp_args = (
-        f"--impersonate chrome:windows-10 -f {video_format} "
+        f"--impersonate chrome -f {video_format} "
         f"--socket-timeout {socket_timeout} "
         "--add-headers \"Referer: https://www.tiktok.com/\" "
         "--add-headers \"Accept-Language: en-US,en;q=0.9\""
@@ -544,7 +544,7 @@ def run_profile(
                 attempt_proxy = isolated_proxy(proxy)
                 fallback_common = replace_proxy(common, attempt_proxy)
                 ytdlp_args = (
-                    f"--impersonate chrome:windows-10 -f {video_format} "
+                    f"--impersonate chrome -f {video_format} "
                     f"--socket-timeout {socket_timeout} "
                     "--add-headers \"Referer: https://www.tiktok.com/\" "
                     "--add-headers \"Accept-Language: en-US,en;q=0.9\""

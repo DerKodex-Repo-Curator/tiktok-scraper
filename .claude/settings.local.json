@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__engram__mem_get_observation"
+    ]
+  }
+}
