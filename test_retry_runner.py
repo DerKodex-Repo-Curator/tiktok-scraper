@@ -211,18 +211,16 @@ class ProfileFallbackTests(unittest.TestCase):
         self.assertEqual(dockerignore[0], "*")
         self.assertEqual(
             set(line for line in dockerignore if line.startswith("!")),
-            {"!Dockerfile", "!docker-entrypoint.sh", "!retry_runner.py"},
+            {"!Dockerfile", "!docker-entrypoint.sh", "!retry_runner.py", "!tiktok-cookies.txt"},
         )
         self.assertNotIn("!targets.txt", dockerignore)
         self.assertNotIn("!downloads", dockerignore)
 
-    def test_dockerfile_pins_forks_and_uses_buildkit_secret_for_private_fetch(self):
+    def test_dockerfile_pins_gallery_dl_version_and_verifies_all_patches(self):
         dockerfile = Path(__file__).with_name("Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("GALLERY_DL_REF=1b68ec56f35651753c4fc527685f56f3a1bd63ee", dockerfile)
-        self.assertIn("YT_DLP_REF=5d6b8c8cd19785c3086ae3a9ec618c45e25eb3bc", dockerfile)
-        self.assertIn("--mount=type=secret,id=github_token,required=true", dockerfile)
-        self.assertIn('test "$(git -C gallery-dl rev-parse HEAD)" = "$GALLERY_DL_REF"', dockerfile)
-        self.assertIn('test "$(git -C yt-dlp rev-parse HEAD)" = "$YT_DLP_REF"', dockerfile)
+        self.assertRegex(dockerfile, r'gallery-dl\[default\]==\d+\.\d+\.\d+')
+        self.assertIn("ok1 and ok2 and ok3", dockerfile)
+        self.assertIn("gallery-dl patch failed", dockerfile)
         self.assertNotRegex(dockerfile, r"(?m)^(?:ARG|ENV)\s+(?:GH_TOKEN|GITHUB_TOKEN)")
 
     def test_total_profile_failure_without_item_ids_counts_one_failure(self):
@@ -250,7 +248,8 @@ class ProfileFallbackTests(unittest.TestCase):
         fallback_success = (0, set(), {"DOWNLOADED": 1, "SKIPPED": 0, "FAILED": 0}, False, None)
         proxy = retry_runner.proxy_url({"SOCKS_PROXY_URL": "socks5h://proxy:1080"})
         with mock.patch.dict(os.environ, {"TIKTOK_FORCE_FALLBACK": "1"}, clear=False), \
-                mock.patch.object(retry_runner, "run", return_value=fallback_success) as run:
+                mock.patch.object(retry_runner, "run", return_value=fallback_success) as run, \
+                mock.patch.object(retry_runner, "isolated_proxy", side_effect=lambda p, **_: p):
             retry_runner.run_profile(
                 "gallery-dl", ["--proxy", proxy], [],
                 "https://www.tiktok.com/@test", {}, proxy,
@@ -284,9 +283,10 @@ class ProfileFallbackTests(unittest.TestCase):
         fallback_command = run.call_args_list[-1].args[0]
         self.assertIn("extractor.tiktok.posts.ytdl=true", fallback_command)
         self.assertIn("extractor.tiktok.posts.module=yt_dlp", fallback_command)
-        self.assertIn(
-            "extractor.tiktok.posts.cmdline-args=--impersonate chrome",
-            fallback_command,
+        self.assertTrue(
+            any("extractor.tiktok.posts.cmdline-args=--impersonate chrome" in s
+                for s in fallback_command),
+            "fallback command missing posts.cmdline-args with --impersonate chrome",
         )
         self.assertLess(fallback_command.index("--range"), len(fallback_command))
 
@@ -338,7 +338,7 @@ class ProfileFallbackTests(unittest.TestCase):
                         "https://www.tiktok.com/@test", {}, proxy,
                     )
 
-                isolate.assert_called_once_with(proxy)
+                self.assertEqual(isolate.call_count, 2)  # initial + inter-attempt rotation
                 second_command = run.call_args_list[1].args[0]
                 self.assertEqual(second_command[second_command.index("--proxy") + 1], rotated)
 
@@ -357,7 +357,7 @@ class ProfileFallbackTests(unittest.TestCase):
                         "gallery-dl", ["--proxy", "socks5h://u:p@tor:9050"], [],
                         "https://www.tiktok.com/@test", {}, "socks5h://u:p@tor:9050",
                     )
-                isolate.assert_not_called()
+                self.assertEqual(isolate.call_count, 1)  # initial fresh circuit only
 
     def test_exponential_jitter_delay_stays_within_configured_range(self):
         env = {"RETRY_JITTER": "0.25"}

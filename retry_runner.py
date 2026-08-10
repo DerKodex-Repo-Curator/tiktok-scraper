@@ -341,7 +341,7 @@ def run(
     # TikTok can leave the connection hanging open without responding, which
     # blocks the read loop forever. A watchdog kills the process so the
     # retry logic can rotate to a fresh Tor identity.
-    profile_timeout = float(os.environ.get("PROFILE_TIMEOUT", "120"))
+    profile_timeout = float(os.environ.get("PROFILE_TIMEOUT", "45"))
     last_output = [time.time()]
     timed_out = [False]
 
@@ -514,7 +514,7 @@ def run_profile(
                 time.sleep(delay)
 
     print("tiktok-dl: using yt-dlp fallback for profile enumeration", file=sys.stderr)
-    if rotate:
+    if rotate and failure_kind == "retryable":
         attempt_proxy = isolated_proxy(proxy)
     fallback_common = replace_proxy(common, attempt_proxy)
     # Improved impersonation with correct header syntax for yt-dlp
