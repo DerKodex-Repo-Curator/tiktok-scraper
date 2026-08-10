@@ -51,7 +51,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 COPY --from=wheels /wheels /wheels
 RUN pip install --no-cache-dir --no-index --find-links=/wheels \
-        gallery-dl yt-dlp PySocks \
+        gallery-dl "yt-dlp[default,curl-cffi]" PySocks \
+    && python3 -c "import curl_cffi; print('curl_cffi', curl_cffi.__version__)" \
     && rm -rf /wheels
 
 COPY docker-entrypoint.sh /usr/local/bin/tiktok-dl

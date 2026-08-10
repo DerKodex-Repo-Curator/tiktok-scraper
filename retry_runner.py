@@ -566,6 +566,14 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
         "--sleep-request", os.environ.get("SLEEP_REQUEST", "2-5"),
         *status_options(),
     ]
+    # Route video/audio extraction through yt-dlp so curl-cffi can present a
+    # real Chrome TLS fingerprint. gallery-dl's own urllib3 requests get 403
+    # on video URLs because TikTok's WAF inspects the JA3/JA4 fingerprint.
+    common.extend([
+        "--option", "extractor.tiktok.videos=ytdl",
+        "--option", "extractor.tiktok.audio=ytdl",
+        "--option", "ytdl.cmdline-args=--impersonate chrome",
+    ])
     if proxy:
         common[:0] = ["--proxy", proxy]
     # Try multiple cookie file locations: env var > mounted > baked-in
