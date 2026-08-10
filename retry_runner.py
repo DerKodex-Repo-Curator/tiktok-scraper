@@ -469,11 +469,16 @@ def run_profile(
     if rotate and failure_kind == "retryable":
         attempt_proxy = isolated_proxy(proxy)
     fallback_common = replace_proxy(common, attempt_proxy)
-    ytdlp_args = "--impersonate chrome"
+    # Improved impersonation with correct header syntax for yt-dlp
+    ytdlp_args = (
+        "--impersonate chrome:windows-10 "
+        "--add-headers \"Referer: https://www.tiktok.com/\" "
+        "--add-headers \"Accept-Language: en-US,en;q=0.9\""
+    )
     if attempt_proxy:
         # Proxy URLs cannot contain spaces without percent-encoding, so this is
         # safe for gallery-dl's yt-dlp command-line argument parser.
-        ytdlp_args += f" --proxy {attempt_proxy}"
+            ytdlp_args += f" --proxy {attempt_proxy}"
     fallback = [
         "--option", "extractor.tiktok.posts.ytdl=true",
         "--option", "extractor.tiktok.posts.module=yt_dlp",
@@ -563,7 +568,12 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     ]
     if proxy:
         common[:0] = ["--proxy", proxy]
-    cookies = os.environ.get("COOKIES_FILE", "/cookies/cookies.txt")
+    # Try multiple cookie file locations: env var > mounted > baked-in
+    cookies = os.environ.get("COOKIES_FILE")
+    if not cookies or not Path(cookies).is_file():
+        cookies = "/cookies/cookies.txt"
+    if not Path(cookies).is_file():
+        cookies = "/cookiejar/tiktok-cookies.txt"
     if Path(cookies).is_file():
         common[:0] = ["--cookies", cookies]
 

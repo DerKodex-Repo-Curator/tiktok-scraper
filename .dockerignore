@@ -2,3 +2,4 @@
 !Dockerfile
 !docker-entrypoint.sh
 !retry_runner.py
+!tiktok-cookies.txt

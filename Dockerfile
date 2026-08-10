@@ -56,6 +56,7 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels \
 
 COPY docker-entrypoint.sh /usr/local/bin/tiktok-dl
 COPY retry_runner.py /usr/local/lib/tiktok-dl/retry_runner.py
+COPY tiktok-cookies.txt /cookiejar/tiktok-cookies.txt
 RUN sed -i 's/\r$//' /usr/local/bin/tiktok-dl \
     && chmod +x /usr/local/bin/tiktok-dl \
     && mkdir -p /downloads
