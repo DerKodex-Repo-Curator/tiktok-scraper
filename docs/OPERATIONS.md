@@ -60,6 +60,24 @@ docker run --rm \
 Use `torproxy`, not `127.0.0.1`, inside the downloader container. Docker DNS
 resolves the container name on `tiktok-net`; container loopback resolves itself.
 
+## Run with an external SOCKS5H proxy
+
+When the proxy is reachable from WSL and Docker, pass its hostname and port
+directly. `socks5h` keeps DNS resolution on the proxy side:
+
+```sh
+cd /mnt/c/Dev/tiktok-scraper
+mkdir -p downloads
+docker run --rm \
+  -v "$(pwd)/downloads:/downloads" \
+  -e SOCKS_PROXY_URL='socks5h://proxy.example.internal:9050' \
+  tiktok-scraper USERNAME --range 1
+```
+
+No Docker network is required for an externally reachable proxy. If the proxy
+requires authentication, provide credentials through local runtime
+configuration and never commit or publish them.
+
 ## Cookies
 
 Mount Netscape-format cookies read-only. The default path is
@@ -116,7 +134,7 @@ Run these manually after changing the wrapper, Dockerfile, or pinned forks.
 1. **Local unit and syntax checks**
 
    ```sh
-   python -m unittest -v test_retry_runner.py
+   python -m unittest -v test_retry_runner.py test_docker_assets.py
    python -m py_compile retry_runner.py
    sh -n docker-entrypoint.sh
    git diff --check

@@ -17,6 +17,19 @@ Build with BuildKit and the required secret exactly as documented in
 `--secret id=github_token,env=GH_TOKEN` cannot fetch the private fork. Do not
 move the token into an ARG, ENV, or URL.
 
+## Entrypoint reports `no such file or directory`
+
+If the script exists in the image but Linux still reports this error, verify
+that `docker-entrypoint.sh` uses LF rather than CRLF line endings. A CRLF
+shebang can make the kernel look for an invalid interpreter path.
+
+```sh
+python -m unittest -v test_docker_assets.py
+```
+
+Do not work around this by changing the container command. Restore LF line
+endings and rebuild the image.
+
 ## Downloader cannot reach Tor
 
 `Connection refused` usually means the address or Docker network is wrong. It
