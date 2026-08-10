@@ -128,11 +128,15 @@ class NewItemsTests(unittest.TestCase):
             f'{prefix} DOWNLOADED "4444444444" "/downloads/too-many.mp4" "video"\n',
         ]
         process = self.Process(lines, rc=-15)
-        with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process) as popen:
+        with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process) as popen, \
+                mock.patch.object(
+                    retry_runner, "terminate_process_tree", side_effect=lambda child: child.terminate()
+                ) as terminate:
             rc, _, counts, profile_failed, _ = retry_runner.run(
                 ["gallery-dl"], {}, new_items=2
             )
 
+        terminate.assert_called_once_with(process)
         self.assertTrue(process.terminated)
         self.assertEqual(rc, 0)
         self.assertFalse(profile_failed)
@@ -184,11 +188,15 @@ class NewItemsTests(unittest.TestCase):
             "[tiktok][warning] 3333333333: Failed to solve JavaScript challenge\n",
         ], rc=-15)
         with mock.patch.object(retry_runner.subprocess, "Popen", return_value=process), \
+                mock.patch.object(
+                    retry_runner, "terminate_process_tree", side_effect=lambda child: child.terminate()
+                ) as terminate, \
                 mock.patch.object(retry_runner, "save"):
             rc, failed, counts, profile_failed, failure_kind = retry_runner.run(
                 ["gallery-dl"], {}, failure_budget=2
             )
 
+        terminate.assert_called_once_with(process)
         self.assertEqual(rc, 1)
         self.assertTrue(process.terminated)
         self.assertEqual(failed, {"1111111111", "2222222222"})
