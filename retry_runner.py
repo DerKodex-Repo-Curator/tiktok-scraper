@@ -336,6 +336,28 @@ def run(
     assert process.stdout is not None
     import threading
     heartbeat_stop = threading.Event()
+
+    # Kill the gallery-dl subprocess if it produces no output for a while.
+    # TikTok can leave the connection hanging open without responding, which
+    # blocks the read loop forever. A watchdog kills the process so the
+    # retry logic can rotate to a fresh Tor identity.
+    profile_timeout = float(os.environ.get("PROFILE_TIMEOUT", "120"))
+    last_output = [time.time()]
+    timed_out = [False]
+
+    def watchdog():
+        while not heartbeat_stop.wait(5):
+            if time.time() - last_output[0] > profile_timeout:
+                print(
+                    f"tiktok-dl: no output for {profile_timeout:g}s; killing process",
+                    file=sys.stderr, flush=True,
+                )
+                timed_out[0] = True
+                terminate_process_tree(process)
+                return
+    watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+    watchdog_thread.start()
+
     def heartbeat():
         elapsed = 0
         while not heartbeat_stop.wait(15):
@@ -344,6 +366,7 @@ def run(
     heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
     heartbeat_thread.start()
     for line in process.stdout:
+        last_output[0] = time.time()
         prepare = MEDIA_PREPARE.match(line.rstrip("\r\n"))
         if prepare:
             try:
@@ -431,8 +454,11 @@ def run(
     # A profile-level challenge happens before post IDs exist. If gallery-dl
     # emitted no terminal item event, treat even rc=0 as an incomplete scan.
     profile_failed = False if quota_reached else (
-        budget_reached or profile_terminal_failure or (profile_challenge and not completed)
+        budget_reached or timed_out[0] or profile_terminal_failure
+        or (profile_challenge and not completed)
     )
+    if timed_out[0] and failure_kind is None:
+        failure_kind = "retryable"
     return rc, failed, counts, profile_failed, failure_kind
 
 
@@ -509,12 +535,40 @@ def run_profile(
         # fingerprint used by this impersonation target.
         "--option", f"extractor.tiktok.posts.cmdline-args={ytdlp_args}",
     ]
-    last_rc, _, counts, profile_failed, failure_kind = run(
-        [binary, *fallback_common, *fallback, *extra, url], queue, url, manifest,
-        media_delay=media_delay, new_items=remaining_quota(),
-        failure_budget=failure_budget,
-    )
-    add_counts(totals, counts)
+    # Retry the yt-dlp fallback with fresh Tor identities if the previous
+    # attempt hung or failed. TikTok blacklists proxy IPs, so a new circuit
+    # often succeeds where the previous one stalled.
+    for fallback_attempt in range(attempts):
+        if fallback_attempt > 0:
+            if rotate:
+                attempt_proxy = isolated_proxy(proxy)
+                fallback_common = replace_proxy(common, attempt_proxy)
+                ytdlp_args = (
+                    f"--impersonate chrome:windows-10 -f {video_format} "
+                    "--add-headers \"Referer: https://www.tiktok.com/\" "
+                    "--add-headers \"Accept-Language: en-US,en;q=0.9\""
+                )
+                if attempt_proxy:
+                    ytdlp_args += f" --proxy {attempt_proxy}"
+                fallback = [
+                    "--option", "extractor.tiktok.posts.ytdl=true",
+                    "--option", "extractor.tiktok.posts.module=yt_dlp",
+                    "--option", f"extractor.tiktok.posts.cmdline-args={ytdlp_args}",
+                ]
+            delay = retry_delay(fallback_attempt - 1, base_delay)
+            print(
+                f"tiktok-dl: yt-dlp retry {fallback_attempt + 1}/{attempts} in {delay:g}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+        last_rc, _, counts, profile_failed, failure_kind = run(
+            [binary, *fallback_common, *fallback, *extra, url], queue, url, manifest,
+            media_delay=media_delay, new_items=remaining_quota(),
+            failure_budget=failure_budget,
+        )
+        add_counts(totals, counts)
+        if not profile_failed:
+            break
     effective_rc = 1 if profile_failed and last_rc == 0 else last_rc
     # Profile extraction can fail before gallery-dl discovers any post ID.
     # Count that scan failure without inventing a media ID or queue entry.
