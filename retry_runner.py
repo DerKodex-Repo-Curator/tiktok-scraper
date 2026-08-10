@@ -9,6 +9,7 @@ import re
 import secrets
 import signal
 import sqlite3
+import string
 import subprocess
 import sys
 import time
@@ -333,6 +334,15 @@ def run(
         text=True, errors="replace", bufsize=1, start_new_session=True,
     )
     assert process.stdout is not None
+    import threading
+    heartbeat_stop = threading.Event()
+    def heartbeat():
+        elapsed = 0
+        while not heartbeat_stop.wait(15):
+            elapsed += 15
+            print(f"tiktok-dl: still running... ({elapsed}s)", file=sys.stderr, flush=True)
+    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
     for line in process.stdout:
         prepare = MEDIA_PREPARE.match(line.rstrip("\r\n"))
         if prepare:
@@ -411,6 +421,7 @@ def run(
             queue.pop(item, None)
             save(queue)
     failed.difference_update(completed)
+    heartbeat_stop.set()
     if quota_reached:
         rc = 0
     elif budget_reached:
@@ -444,6 +455,10 @@ def run_profile(
     last_rc, profile_failed, failure_kind = 1, True, None
     attempt_proxy = proxy
     rotate = tor_rotation_enabled(proxy)
+    # If Tor rotation is enabled, start with an isolated identity so each
+    # profile scan gets a fresh circuit (avoids IP-marked blacklist issues).
+    if rotate:
+        attempt_proxy = isolated_proxy(proxy)
 
     def remaining_quota():
         return None if new_items is None else max(0, new_items - totals["DOWNLOADED"])
@@ -473,7 +488,7 @@ def run_profile(
                 time.sleep(delay)
 
     print("tiktok-dl: using yt-dlp fallback for profile enumeration", file=sys.stderr)
-    if rotate and failure_kind == "retryable":
+    if rotate:
         attempt_proxy = isolated_proxy(proxy)
     fallback_common = replace_proxy(common, attempt_proxy)
     # Improved impersonation with correct header syntax for yt-dlp
@@ -561,7 +576,9 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     else:
         # Append share-link params so TikTok's WAF treats the request as
         # organic shared traffic (bypasses the stricter fingerprinting tier).
-        url = f"https://www.tiktok.com/@{target.lstrip('@')}?_r=1&_t=ZS-98jgGJwyUwm"
+        # The _t token is randomized per request to avoid detection.
+        share_token = "ZS-" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(14))
+        url = f"https://www.tiktok.com/@{target.lstrip('@')}?_r=1&_t={share_token}"
 
     try:
         proxy = proxy_url()
@@ -581,8 +598,14 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     # on video URLs because TikTok's WAF inspects the JA3/JA4 fingerprint.
     # VIDEO_FORMAT lets the user pick a specific format/quality; defaults to
     # yt-dlp's "best" (highest resolution available).
+    # Use an isolated Tor identity if rotation is enabled.
+    effective_proxy = proxy
+    if tor_rotation_enabled(proxy):
+        effective_proxy = isolated_proxy(proxy)
     video_format = os.environ.get("VIDEO_FORMAT", "best")
     ytdlp_cmdline = f"--impersonate chrome -f {video_format}"
+    if effective_proxy:
+        ytdlp_cmdline += f" --proxy {effective_proxy}"
     # Generate a yt-dlp-compatible download archive from gallery-dl's SQLite
     # so yt-dlp knows which videos are already downloaded and skips them.
     # gallery-dl uses keys like "tiktok<video_id>_0_<hash>"; yt-dlp uses
@@ -611,8 +634,8 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
         "--option", "extractor.tiktok.posts.module=yt_dlp",
         "--option", f"ytdl.cmdline-args={ytdlp_cmdline}",
     ])
-    if proxy:
-        common[:0] = ["--proxy", proxy]
+    if effective_proxy:
+        common[:0] = ["--proxy", effective_proxy]
     # Try multiple cookie file locations: env var > mounted > baked-in
     cookies = os.environ.get("COOKIES_FILE")
     if not cookies or not Path(cookies).is_file():
@@ -653,7 +676,8 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
             delay = retry_delay(attempts, base_delay)
             print(f"tiktok-dl: retry {attempts + 1}/{max_attempts} for {video_id} in {delay:g}s", file=sys.stderr)
             time.sleep(delay)
-            retry_url = f"https://www.tiktok.com/@{username}/video/{video_id}?_r=1&_t=ZS-98jgGJwyUwm"
+            retry_token = "ZS-" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(14))
+            retry_url = f"https://www.tiktok.com/@{username}/video/{video_id}?_r=1&_t={retry_token}"
             retry_common = replace_proxy(common, proxy)
             rc, failed, retry_counts, _, failure_kind = run(
                 [binary, *retry_common, *extra, retry_url], queue, url, manifest,
