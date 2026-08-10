@@ -527,9 +527,7 @@ def run_profile(
         "--add-headers \"Accept-Language: en-US,en;q=0.9\""
     )
     if attempt_proxy:
-        # Proxy URLs cannot contain spaces without percent-encoding, so this is
-        # safe for gallery-dl's yt-dlp command-line argument parser.
-            ytdlp_args += f" --proxy {attempt_proxy}"
+        ytdlp_args += f" --proxy {attempt_proxy}"
     fallback = [
         "--option", "extractor.tiktok.posts.ytdl=true",
         "--option", "extractor.tiktok.posts.module=yt_dlp",
@@ -631,11 +629,12 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     if target.startswith(("http://", "https://")):
         url = target
     else:
-        # Append share-link params so TikTok's WAF treats the request as
-        # organic shared traffic (bypasses the stricter fingerprinting tier).
-        # The _t token is randomized per request to avoid detection.
-        share_token = "ZS-" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(14))
-        url = f"https://www.tiktok.com/@{target.lstrip('@')}?_r=1&_t={share_token}"
+        # Use /posts sub-path to activate TiktokPostsExtractor directly,
+        # bypassing TiktokUserExtractor which also dispatches TiktokAvatarExtractor.
+        # The avatar extractor makes urllib3 requests to TikTok's profile page
+        # which 403, burning through the retryable-failure budget before posts
+        # can even start.
+        url = f"https://www.tiktok.com/@{target.lstrip('@')}/posts"
 
     try:
         proxy = proxy_url()
@@ -644,10 +643,12 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
         print(f"tiktok-dl: configuration error: {error}", file=sys.stderr)
         return 2, {"DOWNLOADED": 0, "SKIPPED": 0, "FAILED": 1}, "none"
 
+    verbose = os.environ.get("GALLERY_DL_VERBOSE", "").lower() in ("1", "true", "yes")
     common = [
         "--destination", str(DOWNLOADS),
         "--download-archive", str(ARCHIVE),
         "--sleep-request", os.environ.get("SLEEP_REQUEST", "2-5"),
+        *(["--verbose"] if verbose else []),
         *status_options(),
     ]
     # Route video/audio extraction through yt-dlp so curl-cffi can present a
@@ -660,31 +661,20 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     if tor_rotation_enabled(proxy):
         effective_proxy = isolated_proxy(proxy)
     video_format = os.environ.get("VIDEO_FORMAT", "best")
+    # No --download-archive for yt-dlp: gallery-dl's own SQLite archive
+    # deduplicates. Passing --download-archive to yt-dlp caused it to mutate
+    # info_dict during process_info() in ways that triggered AttributeError
+    # in gallery-dl's dispatch path.
     ytdlp_cmdline = f"--impersonate chrome -f {video_format} --socket-timeout 30"
     if effective_proxy:
         ytdlp_cmdline += f" --proxy {effective_proxy}"
-    # Generate a yt-dlp-compatible download archive from gallery-dl's SQLite
-    # so yt-dlp knows which videos are already downloaded and skips them.
-    # gallery-dl uses keys like "tiktok<video_id>_0_<hash>"; yt-dlp uses
-    # "<extractor>-<id>", so we extract the numeric video_id and convert.
-    ytdlp_archive = DOWNLOADS / ".ytdlp-archive.txt"
-    try:
-        if ARCHIVE.is_file():
-            import sqlite3 as _sqlite3
-            conn = _sqlite3.connect(str(ARCHIVE), timeout=60)
-            entries = []
-            for (entry,) in conn.execute("SELECT entry FROM archive ORDER BY entry"):
-                match = re.match(r"^tiktok(\d+)_", entry)
-                if match:
-                    entries.append(f"tiktok-{match.group(1)}")
-            conn.close()
-            ytdlp_archive.write_text("\n".join(entries) + "\n", encoding="utf-8")
-            ytdlp_cmdline += f" --download-archive {ytdlp_archive}"
-    except Exception as error:
-        print(f"tiktok-dl: warning: could not build yt-dlp archive: {error}", file=sys.stderr)
     common.extend([
+        # Route video extraction through yt-dlp so curl-cffi can present a
+        # real Chrome TLS fingerprint. TikTok's WAF inspects JA3/JA4.
+        # Audio is NOT routed through yt-dlp: music/audio files are served
+        # from CDN URLs that don't require the TLS fingerprint bypass, and
+        # routing audio through yt-dlp caused AttributeError crashes.
         "--option", "extractor.tiktok.videos=ytdl",
-        "--option", "extractor.tiktok.audio=ytdl",
         # Delegate profile enumeration to yt-dlp (curl-cffi) so TikTok's WAF
         # sees a real Chrome TLS fingerprint instead of gallery-dl's urllib3.
         "--option", "extractor.tiktok.posts.ytdl=true",
