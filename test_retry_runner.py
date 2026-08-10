@@ -219,7 +219,7 @@ class ProfileFallbackTests(unittest.TestCase):
     def test_dockerfile_pins_gallery_dl_version_and_verifies_all_patches(self):
         dockerfile = Path(__file__).with_name("Dockerfile").read_text(encoding="utf-8")
         self.assertRegex(dockerfile, r'gallery-dl\[default\]==\d+\.\d+\.\d+')
-        self.assertIn("ok1 and ok2 and ok3", dockerfile)
+        self.assertIn("ok1 and ok2 and ok3 and ok4", dockerfile)
         self.assertIn("gallery-dl patch failed", dockerfile)
         self.assertNotRegex(dockerfile, r"(?m)^(?:ARG|ENV)\s+(?:GH_TOKEN|GITHUB_TOKEN)")
 
