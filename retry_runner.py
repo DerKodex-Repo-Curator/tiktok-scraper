@@ -519,8 +519,10 @@ def run_profile(
     fallback_common = replace_proxy(common, attempt_proxy)
     # Improved impersonation with correct header syntax for yt-dlp
     video_format = os.environ.get("VIDEO_FORMAT", "best")
+    socket_timeout = int(os.environ.get("PROFILE_TIMEOUT", "45")) // 2
     ytdlp_args = (
         f"--impersonate chrome:windows-10 -f {video_format} "
+        f"--socket-timeout {socket_timeout} "
         "--add-headers \"Referer: https://www.tiktok.com/\" "
         "--add-headers \"Accept-Language: en-US,en;q=0.9\""
     )
@@ -545,6 +547,7 @@ def run_profile(
                 fallback_common = replace_proxy(common, attempt_proxy)
                 ytdlp_args = (
                     f"--impersonate chrome:windows-10 -f {video_format} "
+                    f"--socket-timeout {socket_timeout} "
                     "--add-headers \"Referer: https://www.tiktok.com/\" "
                     "--add-headers \"Accept-Language: en-US,en;q=0.9\""
                 )
@@ -657,7 +660,7 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     if tor_rotation_enabled(proxy):
         effective_proxy = isolated_proxy(proxy)
     video_format = os.environ.get("VIDEO_FORMAT", "best")
-    ytdlp_cmdline = f"--impersonate chrome -f {video_format}"
+    ytdlp_cmdline = f"--impersonate chrome -f {video_format} --socket-timeout 30"
     if effective_proxy:
         ytdlp_cmdline += f" --proxy {effective_proxy}"
     # Generate a yt-dlp-compatible download archive from gallery-dl's SQLite
