@@ -45,6 +45,9 @@ PERMANENT_FAILURE = re.compile(
     r"account (?:does not exist|not found|is private)|unsupported URL",
     re.IGNORECASE,
 )
+# "embedding disabled" is NOT permanent — it's a gallery-dl urllib3 403 that
+# yt-dlp (curl-cffi) can bypass. Treat it as retryable so the fallback runs.
+EMBEDDING_DISABLED = re.compile(r"embedding disabled", re.IGNORECASE)
 PROXY_SECRET = re.compile(r"((?:socks(?:4|5|5h)|https?)://)[^\s/@:]+(?::[^\s/@]*)?@", re.IGNORECASE)
 STATUS_PREFIX = "__TIKTOK_DL_STATUS__"
 MEDIA_PREPARE_PREFIX = "__TIKTOK_DL_MEDIA_PREPARE__"
@@ -162,6 +165,10 @@ def parse_new_items(args):
 
 
 def classify_failure(line, current=None):
+    if EMBEDDING_DISABLED.search(line):
+        # gallery-dl says "embedding disabled" when its urllib3 request gets
+        # 403; yt-dlp (curl-cffi) can bypass this. Do not classify as permanent.
+        return "retryable" if current not in ("permanent", "no_rotate") else current
     if PERMANENT_FAILURE.search(line):
         return "permanent"
     if NO_ROTATE_FAILURE.search(line):
@@ -470,8 +477,9 @@ def run_profile(
         attempt_proxy = isolated_proxy(proxy)
     fallback_common = replace_proxy(common, attempt_proxy)
     # Improved impersonation with correct header syntax for yt-dlp
+    video_format = os.environ.get("VIDEO_FORMAT", "best")
     ytdlp_args = (
-        "--impersonate chrome:windows-10 "
+        f"--impersonate chrome:windows-10 -f {video_format} "
         "--add-headers \"Referer: https://www.tiktok.com/\" "
         "--add-headers \"Accept-Language: en-US,en;q=0.9\""
     )
@@ -551,7 +559,9 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     if target.startswith(("http://", "https://")):
         url = target
     else:
-        url = f"https://www.tiktok.com/@{target.lstrip('@')}"
+        # Append share-link params so TikTok's WAF treats the request as
+        # organic shared traffic (bypasses the stricter fingerprinting tier).
+        url = f"https://www.tiktok.com/@{target.lstrip('@')}?_r=1&_t=ZS-98jgGJwyUwm"
 
     try:
         proxy = proxy_url()
@@ -569,10 +579,37 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
     # Route video/audio extraction through yt-dlp so curl-cffi can present a
     # real Chrome TLS fingerprint. gallery-dl's own urllib3 requests get 403
     # on video URLs because TikTok's WAF inspects the JA3/JA4 fingerprint.
+    # VIDEO_FORMAT lets the user pick a specific format/quality; defaults to
+    # yt-dlp's "best" (highest resolution available).
+    video_format = os.environ.get("VIDEO_FORMAT", "best")
+    ytdlp_cmdline = f"--impersonate chrome -f {video_format}"
+    # Generate a yt-dlp-compatible download archive from gallery-dl's SQLite
+    # so yt-dlp knows which videos are already downloaded and skips them.
+    # gallery-dl uses keys like "tiktok<video_id>_0_<hash>"; yt-dlp uses
+    # "<extractor>-<id>", so we extract the numeric video_id and convert.
+    ytdlp_archive = DOWNLOADS / ".ytdlp-archive.txt"
+    try:
+        if ARCHIVE.is_file():
+            import sqlite3 as _sqlite3
+            conn = _sqlite3.connect(str(ARCHIVE), timeout=60)
+            entries = []
+            for (entry,) in conn.execute("SELECT entry FROM archive ORDER BY entry"):
+                match = re.match(r"^tiktok(\d+)_", entry)
+                if match:
+                    entries.append(f"tiktok-{match.group(1)}")
+            conn.close()
+            ytdlp_archive.write_text("\n".join(entries) + "\n", encoding="utf-8")
+            ytdlp_cmdline += f" --download-archive {ytdlp_archive}"
+    except Exception as error:
+        print(f"tiktok-dl: warning: could not build yt-dlp archive: {error}", file=sys.stderr)
     common.extend([
         "--option", "extractor.tiktok.videos=ytdl",
         "--option", "extractor.tiktok.audio=ytdl",
-        "--option", "ytdl.cmdline-args=--impersonate chrome",
+        # Delegate profile enumeration to yt-dlp (curl-cffi) so TikTok's WAF
+        # sees a real Chrome TLS fingerprint instead of gallery-dl's urllib3.
+        "--option", "extractor.tiktok.posts.ytdl=true",
+        "--option", "extractor.tiktok.posts.module=yt_dlp",
+        "--option", f"ytdl.cmdline-args={ytdlp_cmdline}",
     ])
     if proxy:
         common[:0] = ["--proxy", proxy]
@@ -616,7 +653,7 @@ def execute_target(target, extra, include_unscoped=True, new_items=None):
             delay = retry_delay(attempts, base_delay)
             print(f"tiktok-dl: retry {attempts + 1}/{max_attempts} for {video_id} in {delay:g}s", file=sys.stderr)
             time.sleep(delay)
-            retry_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
+            retry_url = f"https://www.tiktok.com/@{username}/video/{video_id}?_r=1&_t=ZS-98jgGJwyUwm"
             retry_common = replace_proxy(common, proxy)
             rc, failed, retry_counts, _, failure_kind = run(
                 [binary, *retry_common, *extra, retry_url], queue, url, manifest,
