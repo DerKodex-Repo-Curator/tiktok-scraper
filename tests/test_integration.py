@@ -211,7 +211,7 @@ def test_requirements_txt_has_core_deps():
 
 
 def test_pyproject_python_version():
-    """pyproject.toml must require Python >=3.14."""
+    """pyproject.toml must require Python >=3.13 (code compatible with 3.13+)."""
     root = Path(__file__).resolve().parent.parent
     content = (root / "pyproject.toml").read_text()
-    assert 'requires-python = ">=3.14"' in content
+    assert 'requires-python = ">=3.13"' in content
