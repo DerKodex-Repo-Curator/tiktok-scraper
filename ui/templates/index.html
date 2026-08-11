@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Download — TikTok Downloader{% endblock %}
+{% block content %}
+<section class="download-section">
+    <h1>Download</h1>
+    <form id="download-form" hx-post="/api/v1/download" hx-trigger="submit">
+        <label for="target">TikTok username or video URL</label>
+        <input type="text" id="target" name="target" placeholder="@username or https://tiktok.com/..." required>
+        <button type="submit" class="btn btn-primary">Download</button>
+    </form>
+    <div id="job-status" class="job-status" hidden>
+        <p>Job ID: <span id="job-id"></span></p>
+        <p>Status: <span id="job-state">pending</span></p>
+        <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+        </div>
+    </div>
+</section>
+{% endblock %}

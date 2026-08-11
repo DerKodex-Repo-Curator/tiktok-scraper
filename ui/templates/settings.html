@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Settings — TikTok Downloader{% endblock %}
+{% block content %}
+<section class="settings-section">
+    <h1>Settings</h1>
+    <form id="settings-form" method="post" action="/settings">
+        <fieldset>
+            <legend>Proxy</legend>
+            <label for="proxy_url">SOCKS5 Proxy URL</label>
+            <input type="text" id="proxy_url" name="proxy_url" value="{{ proxy_url }}" placeholder="socks5h://host:port">
+        </fieldset>
+        <fieldset>
+            <legend>Cookies</legend>
+            <label for="cookie_file">Cookie file path (Netscape format)</label>
+            <input type="text" id="cookie_file" name="cookie_file" value="{{ cookie_file }}" placeholder="/path/to/cookies.txt">
+        </fieldset>
+        <fieldset>
+            <legend>Video Format</legend>
+            <label for="video_format">yt-dlp format selector</label>
+            <input type="text" id="video_format" name="video_format" value="{{ video_format }}" placeholder="best">
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+</section>
+{% endblock %}

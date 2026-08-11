@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}History — TikTok Downloader{% endblock %}
+{% block content %}
+<section class="history-section">
+    <h1>Download History</h1>
+    {% if videos %}
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Video ID</th>
+                <th>Profile</th>
+                <th>Status</th>
+                <th>URL</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in videos %}
+            <tr>
+                <td>{{ v.video_id }}</td>
+                <td>{{ v.target }}</td>
+                <td>{{ v.status }}</td>
+                <td><a href="{{ v.url }}" target="_blank">{{ v.url[:40] }}...</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/history?page={{ page - 1 }}" class="btn">Previous</a>
+        {% endif %}
+        <span>Page {{ page }}</span>
+        {% if end_index < total %}
+        <a href="/history?page={{ page + 1 }}" class="btn">Next</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="empty-state">No videos downloaded yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TikTok Downloader{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/js/htmx.js" defer></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="nav-brand">TikTok Downloader</a>
+        <div class="nav-links">
+            <a href="/">Download</a>
+            <a href="/history">History</a>
+            <a href="/settings">Settings</a>
+        </div>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="footer">
+        <p>TikTok Downloader v0.1.0</p>
+    </footer>
+</body>
+</html>
