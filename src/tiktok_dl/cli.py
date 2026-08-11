@@ -42,7 +42,7 @@ from .retry import WatchdogError, retry_with_backoff
 # ---------------------------------------------------------------------------
 
 DEFAULT_OUTPUT_TEMPLATE = "%(uploader)s/%(id)s %(title)s.%(ext)s"
-DEFAULT_FORMAT = "best"
+DEFAULT_FORMAT = ""  # Empty = let yt-dlp pick best available (avoids -f best warning)
 DEFAULT_TIMEOUT = 120
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_SLEEP_REQUEST = "2-5"

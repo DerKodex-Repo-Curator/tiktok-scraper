@@ -121,3 +121,69 @@ def delete_history_item(video_id: str) -> None:
 def health() -> HealthResponse:
     """Health check."""
     return HealthResponse()
+
+
+@router.get("/thumbnail/{video_id}")
+def get_thumbnail(video_id: str):
+    """Serve the thumbnail image for a video by its ID."""
+    import os
+    import sqlite3
+    from pathlib import Path
+    from fastapi.responses import FileResponse, RedirectResponse
+
+    output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
+    db_path = str(Path(output_dir) / "manifest.sqlite")
+    if not Path(db_path).exists():
+        raise HTTPException(status_code=404, detail="No manifest found")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT thumbnail, profile FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Try to find the thumbnail file by scanning the profile directory
+    profile = row["profile"] or ""
+    profile_dir = Path(output_dir) / profile
+    if profile_dir.exists():
+        for f in profile_dir.iterdir():
+            if f.name.startswith(video_id) and f.suffix in (".jpg", ".webp", ".png", ".jpeg"):
+                return FileResponse(str(f), media_type="image/jpeg")
+
+    # Fallback: try the exact path from manifest
+    thumb_path = Path(output_dir) / row["thumbnail"]
+    if thumb_path.exists():
+        return FileResponse(str(thumb_path), media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+
+@router.get("/video-file/{video_id}")
+def get_video_file(video_id: str):
+    """Serve the downloaded .mp4 file for a video by its ID."""
+    import os
+    import sqlite3
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+
+    output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
+    db_path = str(Path(output_dir) / "manifest.sqlite")
+    if not Path(db_path).exists():
+        raise HTTPException(status_code=404, detail="No manifest found")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT profile FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    profile = row["profile"] or ""
+    profile_dir = Path(output_dir) / profile
+    if profile_dir.exists():
+        for f in profile_dir.iterdir():
+            if f.name.startswith(video_id) and f.suffix == ".mp4":
+                return FileResponse(str(f), media_type="video/mp4")
+
+    raise HTTPException(status_code=404, detail="Video file not found")

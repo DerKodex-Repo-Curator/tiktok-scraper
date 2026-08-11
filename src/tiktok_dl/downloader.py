@@ -23,13 +23,13 @@ def download_video(
         "--proxy", proxy_url,
         "--impersonate", "chrome",
         "--download-archive", download_archive,
-        "--format", format_str,
         "--output", output_template,
         "--write-thumbnail",
-        "--convert-thumbnails", "jpg",
         "--newline",
-        url
     ]
+    if format_str:
+        cmd.extend(["--format", format_str])
+    cmd.append(url)
     try:
         result = subprocess.run(
             cmd,

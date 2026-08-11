@@ -14,7 +14,7 @@ def test_load_config_defaults(tmp_path):
     """Config without a file returns built-in defaults."""
     cfg = load_config(tmp_path / "missing.json")
     assert cfg["proxy_url"] == "socks5h://proxyto.hs.sof.ar:9050"
-    assert cfg["video_format"] == "best"
+    assert cfg["video_format"] == ""
     assert cfg["profile_timeout"] == 120
 
 

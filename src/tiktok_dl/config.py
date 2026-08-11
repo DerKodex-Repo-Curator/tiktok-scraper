@@ -20,7 +20,7 @@ from typing import Optional
 _DEFAULTS = {
     "proxy_url": "socks5h://proxyto.hs.sof.ar:9050",
     "cookie_file": "",
-    "video_format": "best",
+    "video_format": "",
     "profile_timeout": 120,
     "profile_max_attempts": 3,
     "sleep_request": "2-5",

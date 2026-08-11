@@ -40,7 +40,7 @@ def run_download_job(job_id: str, target: str, range_limit: int | None = None) -
         success = process_target(target, {
             "cookies_file": cfg.get("cookie_file") or os.environ.get("COOKIE_FILE"),
             "proxy_url": cfg.get("proxy_url", "socks5h://proxyto.hs.sof.ar:9050"),
-            "format_str": cfg.get("video_format", "best"),
+            "format_str": cfg.get("video_format", ""),
             "timeout": int(cfg.get("profile_timeout", 120)),
             "max_attempts": int(cfg.get("profile_max_attempts", 3)),
             "sleep_request": cfg.get("sleep_request", "2-5"),

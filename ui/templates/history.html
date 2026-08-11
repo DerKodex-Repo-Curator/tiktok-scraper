@@ -10,7 +10,7 @@
             <div class="card-thumb" data-video-id="{{ v.video_id }}">
                 {% set thumb = v.thumbnail if v.thumbnail else '' %}
                 {% if thumb %}
-                <img src="/files/{{ thumb }}" alt="{{ v.title }}" loading="lazy" class="thumb-img"
+                <img src="/api/v1/thumbnail/{{ v.video_id }}" alt="{{ v.title }}" loading="lazy" class="thumb-img"
                      onerror="this.style.display='none';this.parentElement.classList.add('thumb-fallback')">
                 {% else %}
                 <div class="thumb-placeholder">
@@ -114,15 +114,8 @@
             var videoUrl = card.getAttribute('data-video-url');
             var title = card.querySelector('.card-title').textContent;
 
-            // Find the .mp4 file: /files/{profile}/{id} {title}.mp4
-            // We need to probe the static path — construct from thumbnail path
-            var thumbImg = card.querySelector('.thumb-img');
-            var mp4Url = '';
-            if (thumbImg) {
-                var thumbSrc = thumbImg.getAttribute('src');
-                // Replace extension with .mp4
-                mp4Url = thumbSrc.replace(/\.(webp|jpg|jpeg|png|image)$/i, '.mp4');
-            }
+            // Find the .mp4 file via API endpoint by video_id
+            mp4Url = '/api/v1/video-file/' + videoId;
             if (!mp4Url) {
                 // Fallback: construct from profile + video_id
                 var profile = card.querySelector('.card-profile').textContent.replace('@', '');
