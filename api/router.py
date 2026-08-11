@@ -123,6 +123,18 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
+@router.get("/cookie-status")
+def cookie_status():
+    """Check cookie file expiry status."""
+    import os
+    from tiktok_dl.cookies import get_cookie_status
+    from tiktok_dl.config import load_config
+
+    cfg = load_config()
+    cookie_file = cfg.get("cookie_file") or os.environ.get("COOKIE_FILE", "")
+    return get_cookie_status(cookie_file)
+
+
 @router.get("/thumbnail/{video_id}")
 def get_thumbnail(video_id: str):
     """Serve the thumbnail image for a video by its ID."""

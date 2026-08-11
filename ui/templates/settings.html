@@ -3,6 +3,10 @@
 {% block content %}
 <section class="settings-section">
     <h1>Settings</h1>
+
+    <!-- Cookie status banner -->
+    <div id="cookie-banner" class="cookie-banner" hidden></div>
+
     <form id="settings-form" method="post" action="/settings">
         <fieldset>
             <legend>Proxy</legend>
@@ -13,13 +17,117 @@
             <legend>Cookies</legend>
             <label for="cookie_file">Cookie file path (Netscape format)</label>
             <input type="text" id="cookie_file" name="cookie_file" value="{{ cookie_file }}" placeholder="/path/to/cookies.txt">
+            <div id="cookie-detail" class="cookie-detail" hidden>
+                <span id="cookie-status-badge" class="cookie-badge"></span>
+                <span id="cookie-status-text"></span>
+            </div>
         </fieldset>
         <fieldset>
             <legend>Video Format</legend>
-            <label for="video_format">yt-dlp format selector</label>
-            <input type="text" id="video_format" name="video_format" value="{{ video_format }}" placeholder="auto (leave empty for best)">
+            <label for="video_format">Quality preset</label>
+            <select id="video_format_select" name="video_format_select">
+                <option value="">Auto (best available)</option>
+                <option value="bestvideo+bestaudio/best">Best video + audio (merged)</option>
+                <option value="best[height<=1080]">1080p max</option>
+                <option value="best[height<=720]">720p max</option>
+                <option value="best[height<=480]">480p max</option>
+                <option value="bestaudio">Audio only (m4a)</option>
+                <option value="__custom">Custom...</option>
+            </select>
+            <input type="text" id="video_format" name="video_format" value="{{ video_format }}" placeholder="yt-dlp format selector" class="format-custom" hidden>
+            <p class="format-hint">Leave empty to let yt-dlp pick the best available format automatically.</p>
         </fieldset>
         <button type="submit" class="btn btn-primary">Save</button>
     </form>
 </section>
+
+<script>
+(function () {
+    // Format selector logic
+    var select = document.getElementById('video_format_select');
+    var customInput = document.getElementById('video_format');
+    var currentFormat = customInput.value || '';
+
+    // Map known presets to select options
+    var presets = {
+        '': '',
+        'bestvideo+bestaudio/best': 'bestvideo+bestaudio/best',
+        'best[height<=1080]': 'best[height<=1080]',
+        'best[height<=720]': 'best[height<=720]',
+        'best[height<=480]': 'best[height<=480]',
+        'bestaudio': 'bestaudio'
+    };
+
+    if (presets[currentFormat] !== undefined) {
+        select.value = currentFormat;
+        customInput.hidden = true;
+    } else if (currentFormat) {
+        select.value = '__custom';
+        customInput.hidden = false;
+    }
+
+    select.addEventListener('change', function () {
+        if (select.value === '__custom') {
+            customInput.hidden = false;
+            customInput.focus();
+        } else {
+            customInput.hidden = true;
+            customInput.value = select.value;
+        }
+    });
+
+    // On submit, ensure the hidden input has the right value
+    document.getElementById('settings-form').addEventListener('submit', function () {
+        if (select.value !== '__custom') {
+            customInput.value = select.value;
+        }
+    });
+
+    // Cookie status check
+    fetch('/api/v1/cookie-status')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        var banner = document.getElementById('cookie-banner');
+        var detail = document.getElementById('cookie-detail');
+        var badge = document.getElementById('cookie-status-badge');
+        var text = document.getElementById('cookie-status-text');
+
+        if (!data.exists) {
+            banner.hidden = false;
+            banner.className = 'cookie-banner cookie-error';
+            banner.textContent = 'Cookie file not found. Downloads will fail.';
+            return;
+        }
+
+        // Show detail badge
+        detail.hidden = false;
+        badge.className = 'cookie-badge cookie-' + data.status;
+
+        if (data.status === 'expired') {
+            badge.textContent = 'EXPIRED';
+            text.textContent = data.message;
+            banner.hidden = false;
+            banner.className = 'cookie-banner cookie-error';
+            banner.textContent = 'Cookies expired! Refresh your TikTok session cookies to continue downloading.';
+        } else if (data.status === 'warning') {
+            badge.textContent = 'WARNING';
+            text.textContent = data.message;
+            if (data.valid_days !== null && data.valid_days !== undefined) {
+                text.textContent += ' (' + data.valid_days + ' days left)';
+            }
+            banner.hidden = false;
+            banner.className = 'cookie-banner cookie-warning';
+            banner.textContent = 'Cookies expire in ' + (data.valid_days || 'a few') + ' days. Plan a refresh soon.';
+        } else {
+            badge.textContent = 'OK';
+            if (data.valid_days !== null && data.valid_days !== undefined) {
+                text.textContent = 'Valid for ' + data.valid_days + ' more days';
+            } else {
+                text.textContent = 'All cookies valid (session cookies only)';
+            }
+        }
+    })
+    .catch(function () { /* silently fail — settings still work */ });
+})();
+</script>
 {% endblock %}

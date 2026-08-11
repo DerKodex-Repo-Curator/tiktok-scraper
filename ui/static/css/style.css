@@ -616,6 +616,93 @@ legend {
     font-weight: 600;
 }
 
+/* Format selector */
+
+select {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(254, 44, 85, 0.15);
+}
+
+.format-custom {
+    margin-bottom: 0;
+}
+
+.format-hint {
+    font-size: 0.8rem;
+    color: #666;
+    margin-top: 0.3rem;
+}
+
+/* Cookie status */
+
+.cookie-detail {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.cookie-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cookie-ok { background: var(--status-completed); color: #000; }
+.cookie-warning { background: var(--status-pending); color: #000; }
+.cookie-expired { background: var(--status-failed); color: #fff; }
+
+#cookie-status-text {
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+}
+
+.cookie-banner {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+.cookie-banner:not([hidden]) {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.cookie-warning {
+    background: rgba(245, 166, 35, 0.12);
+    border: 1px solid rgba(245, 166, 35, 0.4);
+    color: #f5a623;
+}
+
+.cookie-error {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: var(--status-failed);
+}
+
 /* ----------------------------------------------------------------------- */
 /* Footer                                                                  */
 /* ----------------------------------------------------------------------- */
