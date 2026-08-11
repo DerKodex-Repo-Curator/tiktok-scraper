@@ -24,6 +24,8 @@ RUN pip install --no-cache-dir --prefix=/install \
     "fastapi>=0.110" \
     "uvicorn>=0.30" \
     "pydantic>=2.5" \
+    "jinja2>=3.1" \
+    "python-multipart>=0.0.9" \
     .
 
 # ---------------------------------------------------------------------------
