@@ -41,7 +41,7 @@ from .retry import WatchdogError, retry_with_backoff
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_OUTPUT_TEMPLATE = "{uploader}/{id} {title}.{ext}"
+DEFAULT_OUTPUT_TEMPLATE = "%(uploader)s/%(id)s %(title)s.%(ext)s"
 DEFAULT_FORMAT = "best"
 DEFAULT_TIMEOUT = 120
 DEFAULT_MAX_ATTEMPTS = 3
@@ -119,6 +119,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=None,
         help="Delay between requests in seconds (default: 2-5).",
     )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory for downloads and manifests (default: /downloads if it exists, else current dir).",
+    )
     return parser.parse_args(argv)
 
 
@@ -165,11 +170,17 @@ def is_video_url(target: str) -> bool:
 
 
 def normalize_username(target: str) -> str:
-    """Normalize a username target. Accepts @user or user -> @user."""
+    """Normalize a username target to a full TikTok profile URL.
+
+    Accepts @user, user, or https://www.tiktok.com/@user — returns the
+    full profile URL that yt-dlp can handle.
+    """
     target = target.strip()
+    if target.startswith("http"):
+        return target
     if not target.startswith("@"):
         target = "@" + target
-    return target
+    return f"https://www.tiktok.com/{target}"
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +211,9 @@ def process_target(
     max_attempts = config["max_attempts"]
 
     archive_path = str(Path(download_dir) / "download_archive.txt")
+    # yt-dlp output template: prefix with download dir (string concat, not Path)
+    # because yt-dlp templates use %(field)s and forward slashes
+    full_output_template = str(download_dir).rstrip("/") + "/" + output_template
 
     def _download():
         if is_video_url(target):
@@ -207,7 +221,7 @@ def process_target(
                 url=target,
                 cookies_path=cookies_file,
                 proxy_url=proxy_url,
-                output_template=output_template,
+                output_template=full_output_template,
                 format_str=format_str,
                 download_archive=archive_path,
             )
@@ -221,11 +235,29 @@ def process_target(
                 username=username,
                 cookies_path=cookies_file,
                 proxy_url=proxy_url,
-                output_template=output_template,
+                output_template=full_output_template,
                 format_str=format_str,
                 download_archive=archive_path,
                 max_videos=max_videos,
             )
+            # Download each enumerated video
+            for v in videos:
+                vid_url = v.get("url") or v.get("webpage_url") or ""
+                if not vid_url:
+                    continue
+                try:
+                    exit_code, output = download_video(
+                        url=vid_url,
+                        cookies_path=cookies_file,
+                        proxy_url=proxy_url,
+                        output_template=full_output_template,
+                        format_str=format_str,
+                        download_archive=archive_path,
+                    )
+                    if exit_code != 0:
+                        print(f"Warning: failed to download {vid_url}: {output}")
+                except Exception as e:
+                    print(f"Warning: error downloading {vid_url}: {e}")
             if manifest is not None:
                 for v in videos:
                     vid = v.get("id", v.get("video_id", ""))
@@ -308,6 +340,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Error: no targets to process.")
         return 1
 
+    # Resolve output directory: --output-dir > env OUTPUT_DIR > /downloads if exists > .
+    output_dir = args.output_dir or os.environ.get("OUTPUT_DIR", "")
+    if not output_dir:
+        if Path("/downloads").exists():
+            output_dir = "/downloads"
+        else:
+            output_dir = "."
+
     # Validate cookies file exists (if provided)
     if config["cookies_file"] and not Path(config["cookies_file"]).exists():
         print(f"Error: cookies file not found: {config['cookies_file']}")
@@ -317,9 +357,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     manifest = None
     try:
         manifest = ManifestStore(
-            json_path="manifest.json",
-            csv_path="manifest.csv",
-            sqlite_path="manifest.sqlite",
+            json_path=str(Path(output_dir) / "manifest.json"),
+            csv_path=str(Path(output_dir) / "manifest.csv"),
+            sqlite_path=str(Path(output_dir) / "manifest.sqlite"),
         )
     except Exception:
         pass
@@ -327,7 +367,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Process all targets
     all_success = True
     for target in targets:
-        success = process_target(target, config, manifest)
+        success = process_target(target, config, manifest, download_dir=output_dir)
         if not success:
             all_success = False
 

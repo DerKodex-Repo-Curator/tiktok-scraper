@@ -130,7 +130,7 @@ def run_download_job(job_id: str, target: str) -> None:
             "timeout": int(os.environ.get("PROFILE_TIMEOUT", "120")),
             "max_attempts": int(os.environ.get("PROFILE_MAX_ATTEMPTS", "3")),
             "sleep_request": os.environ.get("SLEEP_REQUEST", "2-5"),
-            "output_template": "{uploader}/{id} {title}.{ext}",
+            "output_template": "%(uploader)s/%(id)s %(title)s.%(ext)s",
             "range": None,
             "new_items": None,
         })

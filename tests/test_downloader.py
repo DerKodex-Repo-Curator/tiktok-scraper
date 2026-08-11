@@ -57,9 +57,15 @@ def test_download_profile_enumeration():
         {"id": "456", "title": "Video 2", "url": "https://tiktok.com/v/456"}
     ]
     
-    with patch("tiktok_dl.downloader.subprocess.run") as mock_run, \
-         patch("builtins.open", mock_open(read_data=json.dumps(mock_json_data))):
-        mock_run.return_value = MagicMock(stdout="", stderr="")
+    # --dump-json emits one JSON object per line to stdout
+    stdout_text = "\n".join(json.dumps(v) for v in mock_json_data)
+    
+    with patch("tiktok_dl.downloader.subprocess.run") as mock_run:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = stdout_text
+        mock_result.stderr = ""
+        mock_run.return_value = mock_result
         
         result = download_profile(
             username="testuser",

@@ -87,9 +87,9 @@ def test_profile_download(tmp_cookies, tmp_path):
     assert exit_code == 0
     mock_dl.assert_called_once()
     args, kwargs = mock_dl.call_args
-    # username should be normalized to @username
+    # username should be normalized to full profile URL
     username = kwargs.get("username") or (args[0] if args else None)
-    assert username == "@username"
+    assert username == "https://www.tiktok.com/@username"
 
 
 def test_profile_download_normalizes_username(tmp_cookies, tmp_path):
@@ -106,7 +106,7 @@ def test_profile_download_normalizes_username(tmp_cookies, tmp_path):
     assert exit_code == 0
     args, kwargs = mock_dl.call_args
     username = kwargs.get("username") or (args[0] if args else None)
-    assert username == "@username"
+    assert username == "https://www.tiktok.com/@username"
 
 
 # ---------------------------------------------------------------------------
@@ -326,9 +326,10 @@ def test_is_video_url():
 
 
 def test_normalize_username():
-    assert normalize_username("user") == "@user"
-    assert normalize_username("@user") == "@user"
-    assert normalize_username("  user  ") == "@user"
+    assert normalize_username("user") == "https://www.tiktok.com/@user"
+    assert normalize_username("@user") == "https://www.tiktok.com/@user"
+    assert normalize_username("  user  ") == "https://www.tiktok.com/@user"
+    assert normalize_username("https://www.tiktok.com/@user") == "https://www.tiktok.com/@user"
 
 
 def test_read_targets_from_file(tmp_path):
