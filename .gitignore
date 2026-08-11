@@ -13,3 +13,30 @@ yarn.lock
 yarn-error.log
 proxy
 bulk
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# SDD tooling caches
+.atl/
+.codegraph/
+
+# Manifests / runtime artifacts
+downloads/
+manifest.json
+manifest.csv
+manifest.sqlite
+download_archive.txt
+
+# Cookies (sensitive)
+cookies.txt
+tiktok-cookies.txt
