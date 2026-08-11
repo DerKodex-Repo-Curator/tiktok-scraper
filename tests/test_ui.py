@@ -63,11 +63,11 @@ def test_history_page_empty():
 
 
 def test_history_page_with_videos():
-    """Scenario: History page renders video records in a table."""
+    """Scenario: History page renders video records as cards."""
     c = client()
     records = [
-        {"video_id": "v1", "profile": "@u", "status": "downloaded", "url": "https://tiktok.com/@u/video/v1"},
-        {"video_id": "v2", "profile": "@u", "status": "downloaded", "url": "https://tiktok.com/@u/video/v2"},
+        {"video_id": "v1", "profile": "@u", "status": "downloaded", "url": "https://tiktok.com/@u/video/v1", "title": "Video One", "thumbnail": "@u/v1.webp"},
+        {"video_id": "v2", "profile": "@u", "status": "downloaded", "url": "https://tiktok.com/@u/video/v2", "title": "Video Two", "thumbnail": "@u/v2.webp"},
     ]
     with patch("tiktok_dl.manifest.ManifestStore") as mock_ms_class:
         mock_ms = MagicMock()
@@ -77,7 +77,8 @@ def test_history_page_with_videos():
     assert resp.status_code == 200
     assert "v1" in resp.text
     assert "v2" in resp.text
-    assert "<table" in resp.text.lower()
+    assert "video-card" in resp.text
+    assert "Video One" in resp.text
 
 
 def test_history_page_pagination():

@@ -25,6 +25,11 @@ _ui_dir = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/static", StaticFiles(directory=str(_ui_dir / "static")), name="static")
 templates = Jinja2Templates(directory=str(_ui_dir / "templates"))
 
+# Mount downloads directory for serving .mp4 and thumbnails
+_dl_dir = Path(os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else "."))
+if _dl_dir.exists():
+    app.mount("/files", StaticFiles(directory=str(_dl_dir)), name="files")
+
 
 # ---------------------------------------------------------------------------
 # UI routes (server-rendered Jinja2 + HTMX)

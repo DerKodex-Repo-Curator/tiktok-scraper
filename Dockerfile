@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --prefix=/install \
     "pydantic>=2.5" \
     "jinja2>=3.1" \
     "python-multipart>=0.0.9" \
+    "pillow>=10.0" \
     .
 
 # ---------------------------------------------------------------------------

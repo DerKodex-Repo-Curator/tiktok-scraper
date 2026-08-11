@@ -77,6 +77,7 @@ def list_history(
             title=r.get("title", ""),
             status=r.get("status", "downloaded"),
             path=r.get("path", ""),
+            thumbnail=r.get("thumbnail", ""),
         )
         for r in records
     ]

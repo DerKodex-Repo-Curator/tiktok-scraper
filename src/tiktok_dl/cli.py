@@ -258,16 +258,36 @@ def process_target(
                         print(f"Warning: failed to download {vid_url}: {output}")
                 except Exception as e:
                     print(f"Warning: error downloading {vid_url}: {e}")
+
+            # Post-process: rename .image thumbnails to .jpg
+            _rename_thumbnails(download_dir)
             if manifest is not None:
                 for v in videos:
                     vid = v.get("id", v.get("video_id", ""))
                     if vid and not manifest.video_exists(vid):
+                        # Derive thumbnail path from output template
+                        # yt-dlp saves thumbnail as {base}.webp or .jpg next to video
+                        vid_str = str(vid)
+                        title = v.get("title", "")
+                        # Extract profile name without @ for file paths
+                        # username is a URL like https://www.tiktok.com/@finn.oconnor64
+                        profile_name = username.replace("https://www.tiktok.com/", "").strip("/")
+                        # Remove leading @ for file paths (yt-dlp %(uploader)s doesn't include @)
+                        profile_clean = profile_name.lstrip("@")
+                        # Build expected file paths
+                        base_path = vid_str
+                        if title:
+                            base_path = f"{vid_str} {title}"
+                        # Thumbnail saved as .jpg (yt-dlp --convert-thumbnails jpg)
+                        thumb_path = f"{profile_clean}/{base_path}.jpg"
                         manifest.add_video(
                             vid,
                             {
                                 "url": v.get("url", v.get("webpage_url", "")),
-                                "profile": username,
+                                "profile": profile_clean,
+                                "title": title,
                                 "status": "downloaded",
+                                "thumbnail": thumb_path,
                             },
                         )
             return videos
@@ -309,6 +329,18 @@ def read_targets_from_file(file_path: str) -> List[str]:
             if line and not line.startswith("#"):
                 targets.append(line)
     return targets
+
+
+def _rename_thumbnails(download_dir: str) -> None:
+    """Rename .image files to .jpg (yt-dlp saves thumbnails as .image
+    when it can't detect the content type)."""
+    base = Path(download_dir)
+    for img_file in base.rglob("*.image"):
+        jpg_path = img_file.with_suffix(".jpg")
+        try:
+            img_file.rename(jpg_path)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------

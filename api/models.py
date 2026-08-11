@@ -52,6 +52,7 @@ class HistoryItem(BaseModel):
     title: str = ""
     status: str = "downloaded"
     path: str = ""
+    thumbnail: str = ""
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

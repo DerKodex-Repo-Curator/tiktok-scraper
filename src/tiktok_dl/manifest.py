@@ -24,7 +24,7 @@ class ManifestStore:
         if not os.path.exists(self.csv_path):
             with open(self.csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['video_id', 'url', 'profile', 'status', 'timestamp', 'path', 'hash'])
+                writer.writerow(['video_id', 'url', 'profile', 'title', 'status', 'timestamp', 'path', 'thumbnail', 'hash'])
     
     def _init_sqlite(self):
         with sqlite3.connect(self.sqlite_path) as conn:
@@ -33,22 +33,34 @@ class ManifestStore:
                     video_id TEXT PRIMARY KEY,
                     url TEXT,
                     profile TEXT,
+                    title TEXT,
                     status TEXT,
                     timestamp INTEGER,
                     path TEXT,
+                    thumbnail TEXT,
                     hash TEXT
                 )''')
+            # Migrate: add columns if they don't exist (for existing DBs)
+            cursor = conn.execute("PRAGMA table_info(videos)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "title" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN title TEXT DEFAULT ''")
+            if "thumbnail" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN thumbnail TEXT DEFAULT ''")
             conn.commit()
     
     def add_video(self, video_id: str, metadata: Dict) -> None:
+        import time
         # Prepare data for insertion
         data = (
             video_id,
             metadata.get('url', ''),
             metadata.get('profile', ''),
+            metadata.get('title', ''),
             metadata.get('status', 'downloaded'),
-            metadata.get('timestamp', 0),
+            metadata.get('timestamp', int(time.time())),
             metadata.get('path', ''),
+            metadata.get('thumbnail', ''),
             metadata.get('hash', '')
         )
         
@@ -56,8 +68,8 @@ class ManifestStore:
         with sqlite3.connect(self.sqlite_path) as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO videos 
-                (video_id, url, profile, status, timestamp, path, hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (video_id, url, profile, title, status, timestamp, path, thumbnail, hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', data)
             conn.commit()
         
@@ -97,15 +109,17 @@ class ManifestStore:
                 'video_id': video_id,
                 'url': metadata.get('url', ''),
                 'profile': metadata.get('profile', ''),
+                'title': metadata.get('title', ''),
                 'status': metadata.get('status', 'downloaded'),
                 'timestamp': metadata.get('timestamp', 0),
                 'path': metadata.get('path', ''),
+                'thumbnail': metadata.get('thumbnail', ''),
                 'hash': metadata.get('hash', '')
             }
             records_from_csv.append(new_row)
         
         with open(self.csv_path, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=['video_id', 'url', 'profile', 'status', 'timestamp', 'path', 'hash'])
+            writer = csv.DictWriter(f, fieldnames=['video_id', 'url', 'profile', 'title', 'status', 'timestamp', 'path', 'thumbnail', 'hash'])
             writer.writeheader()
             writer.writerows(records_from_csv)
     

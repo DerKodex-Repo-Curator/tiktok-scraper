@@ -25,6 +25,8 @@ def download_video(
         "--download-archive", download_archive,
         "--format", format_str,
         "--output", output_template,
+        "--write-thumbnail",
+        "--convert-thumbnails", "jpg",
         "--newline",
         url
     ]

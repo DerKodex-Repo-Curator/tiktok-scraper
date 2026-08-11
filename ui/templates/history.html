@@ -4,26 +4,67 @@
 <section class="history-section">
     <h1>Download History</h1>
     {% if videos %}
-    <table class="history-table">
-        <thead>
-            <tr>
-                <th>Video ID</th>
-                <th>Profile</th>
-                <th>Status</th>
-                <th>URL</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for v in videos %}
-            <tr>
-                <td>{{ v.video_id }}</td>
-                <td>{{ v.target }}</td>
-                <td>{{ v.status }}</td>
-                <td><a href="{{ v.url }}" target="_blank">{{ v.url[:40] }}...</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card-grid">
+        {% for v in videos %}
+        <article class="video-card" data-video-id="{{ v.video_id }}" data-video-url="{{ v.url }}">
+            <div class="card-thumb" data-video-id="{{ v.video_id }}">
+                {% set thumb = v.thumbnail if v.thumbnail else '' %}
+                {% if thumb %}
+                <img src="/files/{{ thumb }}" alt="{{ v.title }}" loading="lazy" class="thumb-img"
+                     onerror="this.style.display='none';this.parentElement.classList.add('thumb-fallback')">
+                {% else %}
+                <div class="thumb-placeholder">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M15 10l4.55-2.27a1 1 0 011.45.89v6.76a1 1 0 01-1.45.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                {% endif %}
+                <div class="card-overlay">
+                    <button class="play-btn" type="button" aria-label="Play video">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <h3 class="card-title" title="{{ v.title }}">{{ v.title or v.video_id }}</h3>
+                <p class="card-profile">@{{ v.target or v.profile }}</p>
+                <div class="card-meta">
+                    <span class="card-status status-{{ v.status }}">{{ v.status }}</span>
+                    <span class="card-time" data-timestamp="{{ v.timestamp or '' }}">{{ v.timestamp or '' }}</span>
+                </div>
+                <div class="card-actions">
+                    <button class="card-btn" type="button" data-action="redownload" data-url="{{ v.url }}" aria-label="Re-download">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/>
+                        </svg>
+                    </button>
+                    <button class="card-btn card-btn-danger" type="button" data-action="delete" data-video-id="{{ v.video_id }}" aria-label="Delete">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                    </button>
+                    <a href="{{ v.url }}" target="_blank" class="card-btn card-btn-link" aria-label="Open on TikTok">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+
+    <!-- Inline video player (hidden, shown on click) -->
+    <div id="video-player" class="video-player" hidden>
+        <div class="player-header">
+            <span id="player-title"></span>
+            <button class="player-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <video id="player-video" controls preload="metadata"></video>
+    </div>
+
     <div class="pagination">
         {% if page > 1 %}
         <a href="/history?page={{ page - 1 }}" class="btn">Previous</a>
@@ -34,7 +75,117 @@
         {% endif %}
     </div>
     {% else %}
-    <p class="empty-state">No videos downloaded yet.</p>
+    <div class="empty-state-card">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="empty-icon">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <h2>No videos downloaded yet</h2>
+        <p>Enter a TikTok username on the <a href="/">Download page</a> to start.</p>
+    </div>
     {% endif %}
 </section>
+
+<script>
+(function () {
+    // Relative timestamps
+    document.querySelectorAll('.card-time[data-timestamp]').forEach(function (el) {
+        var ts = el.getAttribute('data-timestamp');
+        if (!ts) return;
+        var date = new Date(parseInt(ts) * 1000);
+        var now = new Date();
+        var diff = Math.floor((now - date) / 1000);
+        if (diff < 60) el.textContent = 'just now';
+        else if (diff < 3600) el.textContent = Math.floor(diff / 60) + 'm ago';
+        else if (diff < 86400) el.textContent = Math.floor(diff / 3600) + 'h ago';
+        else el.textContent = Math.floor(diff / 86400) + 'd ago';
+    });
+
+    // Video player
+    var player = document.getElementById('video-player');
+    var playerVideo = document.getElementById('player-video');
+    var playerTitle = document.getElementById('player-title');
+    var playerClose = document.querySelector('.player-close');
+
+    document.querySelectorAll('.card-thumb, .play-btn').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+            e.preventDefault();
+            var card = el.closest('.video-card');
+            var videoId = card.getAttribute('data-video-id');
+            var videoUrl = card.getAttribute('data-video-url');
+            var title = card.querySelector('.card-title').textContent;
+
+            // Find the .mp4 file: /files/{profile}/{id} {title}.mp4
+            // We need to probe the static path — construct from thumbnail path
+            var thumbImg = card.querySelector('.thumb-img');
+            var mp4Url = '';
+            if (thumbImg) {
+                var thumbSrc = thumbImg.getAttribute('src');
+                // Replace extension with .mp4
+                mp4Url = thumbSrc.replace(/\.(webp|jpg|jpeg|png|image)$/i, '.mp4');
+            }
+            if (!mp4Url) {
+                // Fallback: construct from profile + video_id
+                var profile = card.querySelector('.card-profile').textContent.replace('@', '');
+                mp4Url = '/files/' + profile + '/' + videoId + '.mp4';
+            }
+
+            playerTitle.textContent = title;
+            playerVideo.src = mp4Url;
+            player.hidden = false;
+            player.classList.add('visible');
+            playerVideo.play().catch(function () {});
+        });
+    });
+
+    playerClose.addEventListener('click', function () {
+        playerVideo.pause();
+        playerVideo.src = '';
+        player.hidden = true;
+        player.classList.remove('visible');
+    });
+
+    // Re-download
+    document.querySelectorAll('[data-action="redownload"]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var url = btn.getAttribute('data-url');
+            btn.disabled = true;
+            fetch('/api/v1/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: url })
+            }).then(function (r) { return r.json(); })
+            .then(function (job) {
+                btn.classList.add('card-btn-success');
+                setTimeout(function () {
+                    btn.disabled = false;
+                    btn.classList.remove('card-btn-success');
+                }, 2000);
+            })
+            .catch(function (err) {
+                btn.disabled = false;
+                console.error(err);
+            });
+        });
+    });
+
+    // Delete
+    document.querySelectorAll('[data-action="delete"]').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var videoId = btn.getAttribute('data-video-id');
+            var card = btn.closest('.video-card');
+            if (!confirm('Delete this video from history?')) return;
+            fetch('/api/v1/history/' + videoId, { method: 'DELETE' })
+            .then(function (r) {
+                if (r.ok) {
+                    card.classList.add('card-removing');
+                    setTimeout(function () { card.remove(); }, 250);
+                }
+            })
+            .catch(function (err) { console.error(err); });
+        });
+    });
+})();
+</script>
 {% endblock %}
