@@ -55,9 +55,16 @@ def list_history(
 ) -> HistoryListResponse:
     """Paginated list of downloaded videos from the manifest."""
     from tiktok_dl.manifest import ManifestStore
+    import os
+    from pathlib import Path
 
+    output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
     try:
-        store = ManifestStore("manifest.json", "manifest.csv", "manifest.sqlite")
+        store = ManifestStore(
+            str(Path(output_dir) / "manifest.json"),
+            str(Path(output_dir) / "manifest.csv"),
+            str(Path(output_dir) / "manifest.sqlite"),
+        )
         records = store.get_all()
     except Exception:
         records = []
@@ -87,13 +94,20 @@ def list_history(
 def delete_history_item(video_id: str) -> None:
     """Delete a single video record from the manifest."""
     from tiktok_dl.manifest import ManifestStore
+    import os
+    import sqlite3
+    from pathlib import Path
 
+    output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
     try:
-        store = ManifestStore("manifest.json", "manifest.csv", "manifest.sqlite")
+        store = ManifestStore(
+            str(Path(output_dir) / "manifest.json"),
+            str(Path(output_dir) / "manifest.csv"),
+            str(Path(output_dir) / "manifest.sqlite"),
+        )
         if not store.video_exists(video_id):
             raise HTTPException(status_code=404, detail="Video not found")
-        import sqlite3
-        with sqlite3.connect("manifest.sqlite") as conn:
+        with sqlite3.connect(str(Path(output_dir) / "manifest.sqlite")) as conn:
             conn.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
             conn.commit()
     except HTTPException:

@@ -21,9 +21,21 @@ def run_download_job(job_id: str, target: str, range_limit: int | None = None) -
     try:
         from tiktok_dl.cli import process_target
         from tiktok_dl.config import load_config
+        from tiktok_dl.manifest import ManifestStore
 
         cfg = load_config()
         output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
+
+        # Create manifest store in the output dir so history is visible
+        manifest = None
+        try:
+            manifest = ManifestStore(
+                json_path=str(Path(output_dir) / "manifest.json"),
+                csv_path=str(Path(output_dir) / "manifest.csv"),
+                sqlite_path=str(Path(output_dir) / "manifest.sqlite"),
+            )
+        except Exception:
+            pass
 
         success = process_target(target, {
             "cookies_file": cfg.get("cookie_file") or os.environ.get("COOKIE_FILE"),
@@ -35,7 +47,7 @@ def run_download_job(job_id: str, target: str, range_limit: int | None = None) -
             "output_template": cfg.get("output_template", "%(uploader)s/%(id)s %(title)s.%(ext)s"),
             "range": range_limit,
             "new_items": None,
-        }, download_dir=output_dir)
+        }, download_dir=output_dir, manifest=manifest)
         if success:
             update_job(job_id, status="completed")
         else:

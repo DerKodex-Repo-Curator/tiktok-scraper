@@ -42,8 +42,13 @@ def history_page(request: Request, page: int = 1, page_size: int = 20) -> HTMLRe
     """History view with pagination."""
     from tiktok_dl.manifest import ManifestStore
 
+    output_dir = os.environ.get("OUTPUT_DIR", "/downloads" if Path("/downloads").exists() else ".")
     try:
-        store = ManifestStore("manifest.json", "manifest.csv", "manifest.sqlite")
+        store = ManifestStore(
+            str(Path(output_dir) / "manifest.json"),
+            str(Path(output_dir) / "manifest.csv"),
+            str(Path(output_dir) / "manifest.sqlite"),
+        )
         records = store.get_all()
     except Exception:
         records = []

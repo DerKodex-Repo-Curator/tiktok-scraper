@@ -3,17 +3,109 @@
 {% block content %}
 <section class="download-section">
     <h1>Download</h1>
-    <form id="download-form" hx-post="/api/v1/download" hx-trigger="submit">
+    <form id="download-form">
         <label for="target">TikTok username or video URL</label>
-        <input type="text" id="target" name="target" placeholder="@username or https://tiktok.com/..." required>
-        <button type="submit" class="btn btn-primary">Download</button>
+        <input type="text" id="target" name="target" placeholder="@username or https://tiktok.com/..." required autocomplete="off">
+        <label for="range" class="range-label">Limit to N most recent videos (optional)</label>
+        <input type="number" id="range" name="range" min="1" max="500" placeholder="3" class="range-input">
+        <button type="submit" class="btn btn-primary" id="download-btn">
+            <span class="btn-label">Download</span>
+        </button>
     </form>
     <div id="job-status" class="job-status" hidden>
-        <p>Job ID: <span id="job-id"></span></p>
-        <p>Status: <span id="job-state">pending</span></p>
+        <div class="job-header">
+            <span class="job-badge" id="job-badge">pending</span>
+            <span class="job-target" id="job-target"></span>
+        </div>
         <div class="progress-bar">
             <div id="progress-fill" class="progress-fill"></div>
         </div>
+        <p class="job-id-text">Job ID: <span id="job-id"></span></p>
     </div>
 </section>
+
+<script>
+(function () {
+    var form = document.getElementById('download-form');
+    var btn = document.getElementById('download-btn');
+    var btnLabel = btn.querySelector('.btn-label');
+    var statusBox = document.getElementById('job-status');
+    var jobBadge = document.getElementById('job-badge');
+    var jobTarget = document.getElementById('job-target');
+    var jobIdSpan = document.getElementById('job-id');
+    var progressFill = document.getElementById('progress-fill');
+    var pollTimer = null;
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var target = document.getElementById('target').value.trim();
+        if (!target) return;
+
+        // Disable button, show loading state
+        btn.disabled = true;
+        btnLabel.textContent = 'Starting...';
+
+        var body = { target: target };
+        var rangeVal = document.getElementById('range').value;
+        if (rangeVal) body.range = parseInt(rangeVal, 10);
+
+        fetch('/api/v1/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (job) {
+            // Show status box with entry animation
+            statusBox.hidden = false;
+            statusBox.classList.add('visible');
+            jobBadge.textContent = job.status;
+            jobBadge.className = 'job-badge ' + job.status;
+            jobTarget.textContent = job.target;
+            jobIdSpan.textContent = job.job_id;
+            progressFill.style.width = '0%';
+            btnLabel.textContent = 'Downloading...';
+            pollJob(job.job_id);
+        })
+        .catch(function (err) {
+            btnLabel.textContent = 'Error';
+            btn.disabled = false;
+            console.error(err);
+        });
+    });
+
+    function pollJob(jobId) {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(function () {
+            fetch('/api/v1/jobs/' + jobId)
+            .then(function (r) { return r.json(); })
+            .then(function (job) {
+                jobBadge.textContent = job.status;
+                jobBadge.className = 'job-badge ' + job.status;
+
+                // Animate progress based on status
+                if (job.status === 'running') {
+                    progressFill.style.width = '50%';
+                } else if (job.status === 'completed') {
+                    progressFill.style.width = '100%';
+                    finishPoll(true);
+                } else if (job.status === 'failed') {
+                    progressFill.style.width = '100%';
+                    finishPoll(false, job.error);
+                }
+            })
+            .catch(function (err) { console.error(err); });
+        }, 3000);
+    }
+
+    function finishPoll(success, errorMsg) {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        btn.disabled = false;
+        btnLabel.textContent = success ? 'Download' : 'Retry';
+        if (!success && errorMsg) {
+            jobBadge.textContent = 'failed: ' + (errorMsg || 'unknown');
+        }
+    }
+})();
+</script>
 {% endblock %}
