@@ -111,9 +111,9 @@ def test_api_health_and_download_flow():
     """Scenario: API health check + start download + list jobs."""
     from fastapi.testclient import TestClient
     from api.main import app
-    from api.router import _jobs
+    from api import jobstore
 
-    _jobs.clear()
+    jobstore.clear_all_jobs()
     c = TestClient(app)
 
     # Health

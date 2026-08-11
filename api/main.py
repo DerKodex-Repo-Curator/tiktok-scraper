@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .models import JobProgress, JobResponse
-from .router import router, _jobs
+from .router import router
+from .jobstore import get_job, update_job
 
 app = FastAPI(
     title="TikTok Downloader API",
@@ -67,10 +68,13 @@ def history_page(request: Request, page: int = 1, page_size: int = 20) -> HTMLRe
 @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
 def settings_page(request: Request) -> HTMLResponse:
     """Settings panel."""
+    from tiktok_dl.config import load_config
+
+    cfg = load_config()
     return templates.TemplateResponse(request, "settings.html", {
-        "proxy_url": os.environ.get("PROXY_URL", "socks5h://proxyto.hs.sof.ar:9050"),
-        "cookie_file": os.environ.get("COOKIE_FILE", ""),
-        "video_format": os.environ.get("VIDEO_FORMAT", "best"),
+        "proxy_url": cfg.get("proxy_url", ""),
+        "cookie_file": cfg.get("cookie_file", ""),
+        "video_format": cfg.get("video_format", "best"),
     })
 
 
@@ -81,7 +85,15 @@ def save_settings(
     cookie_file: str = Form(""),
     video_format: str = Form(""),
 ) -> HTMLResponse:
-    """Persist settings to environment (session-level for this slice)."""
+    """Persist settings to config file and env vars."""
+    from tiktok_dl.config import save_config
+
+    save_config({
+        "proxy_url": proxy_url,
+        "cookie_file": cookie_file,
+        "video_format": video_format,
+    })
+    # Also update env for the current session (background workers read env)
     os.environ["PROXY_URL"] = proxy_url
     os.environ["COOKIE_FILE"] = cookie_file
     os.environ["VIDEO_FORMAT"] = video_format
@@ -104,11 +116,10 @@ app.include_router(router)
 
 def run_download_job(job_id: str, target: str) -> None:
     """Execute a download job in the background."""
-    job = _jobs.get(job_id)
+    job = get_job(job_id)
     if job is None:
         return
-    job.status = "running"
-    job.updated_at = datetime.now(UTC)
+    update_job(job_id, status="running")
     try:
         from tiktok_dl.cli import process_target
 
@@ -123,11 +134,9 @@ def run_download_job(job_id: str, target: str) -> None:
             "range": None,
             "new_items": None,
         })
-        job.status = "completed" if success else "failed"
-        if not success:
-            job.error = "Download failed"
+        if success:
+            update_job(job_id, status="completed")
+        else:
+            update_job(job_id, status="failed", error="Download failed")
     except Exception as exc:
-        job.status = "failed"
-        job.error = str(exc)
-    finally:
-        job.updated_at = datetime.now(UTC)
+        update_job(job_id, status="failed", error=str(exc))

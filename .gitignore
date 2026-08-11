@@ -35,6 +35,7 @@ downloads/
 manifest.json
 manifest.csv
 manifest.sqlite
+jobs.sqlite
 download_archive.txt
 
 # Cookies (sensitive)

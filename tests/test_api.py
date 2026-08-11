@@ -1,11 +1,12 @@
 # tests/test_api.py — Integration tests for the FastAPI API
 
+import os
 from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
 
 from api.main import app
-from api.router import _jobs
+from api import jobstore
 
 
 # ---------------------------------------------------------------------------
@@ -14,8 +15,8 @@ from api.router import _jobs
 
 
 def setup_function():
-    """Clear the in-memory job store before each test."""
-    _jobs.clear()
+    """Clear the job store before each test."""
+    jobstore.clear_all_jobs()
 
 
 def client() -> TestClient:
