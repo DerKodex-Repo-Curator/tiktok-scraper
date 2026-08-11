@@ -12,6 +12,7 @@ class DownloadRequest(BaseModel):
     """Request body for POST /api/v1/download."""
 
     target: str = Field(..., description="TikTok username or video URL.")
+    range: int | None = Field(None, description="Limit to N most recent videos.")
 
 
 class JobProgress(BaseModel):

@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 import os
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict
 
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .models import JobProgress, JobResponse
 from .router import router
-from .jobstore import get_job, update_job
 
 app = FastAPI(
     title="TikTok Downloader API",
@@ -105,38 +100,3 @@ def save_settings(
 
 
 app.include_router(router)
-
-
-# ---------------------------------------------------------------------------
-# Background download worker (runs in a thread via FastAPI BackgroundTasks).
-# The actual download call is delegated to the core tiktok_dl package so the
-# API never duplicates CLI logic.
-# ---------------------------------------------------------------------------
-
-
-def run_download_job(job_id: str, target: str) -> None:
-    """Execute a download job in the background."""
-    job = get_job(job_id)
-    if job is None:
-        return
-    update_job(job_id, status="running")
-    try:
-        from tiktok_dl.cli import process_target
-
-        success = process_target(target, {
-            "cookies_file": os.environ.get("COOKIE_FILE"),
-            "proxy_url": os.environ.get("PROXY_URL", "socks5h://proxyto.hs.sof.ar:9050"),
-            "format_str": os.environ.get("VIDEO_FORMAT", "best"),
-            "timeout": int(os.environ.get("PROFILE_TIMEOUT", "120")),
-            "max_attempts": int(os.environ.get("PROFILE_MAX_ATTEMPTS", "3")),
-            "sleep_request": os.environ.get("SLEEP_REQUEST", "2-5"),
-            "output_template": "%(uploader)s/%(id)s %(title)s.%(ext)s",
-            "range": None,
-            "new_items": None,
-        })
-        if success:
-            update_job(job_id, status="completed")
-        else:
-            update_job(job_id, status="failed", error="Download failed")
-    except Exception as exc:
-        update_job(job_id, status="failed", error=str(exc))

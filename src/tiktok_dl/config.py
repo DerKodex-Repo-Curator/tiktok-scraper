@@ -24,7 +24,7 @@ _DEFAULTS = {
     "profile_timeout": 120,
     "profile_max_attempts": 3,
     "sleep_request": "2-5",
-    "output_template": "{uploader}/{id} {title}.{ext}",
+    "output_template": "%(uploader)s/%(id)s %(title)s.%(ext)s",
 }
 
 _ENV_MAP = {

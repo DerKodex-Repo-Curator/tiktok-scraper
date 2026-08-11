@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from .jobstore import (
     clear_all_jobs,
@@ -11,6 +11,7 @@ from .jobstore import (
     list_all_jobs,
     update_job,
 )
+from .worker import run_download_job
 from .models import (
     DownloadRequest,
     HealthResponse,
@@ -24,9 +25,11 @@ router = APIRouter(prefix="/api/v1", tags=["tiktok-downloader"])
 
 
 @router.post("/download", response_model=JobResponse, status_code=202)
-def start_download(req: DownloadRequest) -> JobResponse:
-    """Enqueue a download job for the given target."""
-    return create_job(req.target)
+def start_download(req: DownloadRequest, background_tasks: BackgroundTasks) -> JobResponse:
+    """Enqueue a download job for the given target and start it in the background."""
+    job = create_job(req.target)
+    background_tasks.add_task(run_download_job, job.job_id, req.target, req.range)
+    return job
 
 
 @router.get("/jobs", response_model=JobListResponse)
