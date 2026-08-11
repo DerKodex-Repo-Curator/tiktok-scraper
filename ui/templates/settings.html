@@ -21,6 +21,7 @@
                 <span id="cookie-status-badge" class="cookie-badge"></span>
                 <span id="cookie-status-text"></span>
             </div>
+            <button type="button" class="btn btn-refresh" id="refresh-cookies-btn">Refresh Cookies</button>
         </fieldset>
         <fieldset>
             <legend>Video Format</legend>
@@ -40,6 +41,22 @@
         <button type="submit" class="btn btn-primary">Save</button>
     </form>
 </section>
+
+<!-- QR Login Modal -->
+<div id="qr-modal" class="qr-modal" hidden>
+    <div class="qr-modal-content">
+        <div class="qr-modal-header">
+            <h2>Scan to Login</h2>
+            <button class="qr-modal-close" id="qr-modal-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="qr-modal-body">
+            <img id="qr-image" alt="QR Code" class="qr-image">
+            <p id="qr-modal-status" class="qr-modal-status">Starting...</p>
+            <p class="qr-modal-hint">Open TikTok on your phone &rarr; Me &rarr; Scan QR Code</p>
+            <button class="btn" id="qr-modal-cancel" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -128,6 +145,136 @@
         }
     })
     .catch(function () { /* silently fail — settings still work */ });
+})();
+
+// Cookie refresh flow
+(function () {
+    var refreshBtn = document.getElementById('refresh-cookies-btn');
+    var modal = document.getElementById('qr-modal');
+    var modalImg = document.getElementById('qr-image');
+    var modalStatus = document.getElementById('qr-modal-status');
+    var modalClose = document.getElementById('qr-modal-close');
+    var modalCancel = document.getElementById('qr-modal-cancel');
+    var pollTimer = null;
+
+    if (!refreshBtn) return;
+
+    // Ensure the modal cannot intercept clicks while hidden, even if CSS is cached.
+    modal.style.display = 'none';
+
+    refreshBtn.addEventListener('click', function () {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Starting...';
+        fetch('/api/v1/cookie-refresh', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.status === 'error') {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = 'Refresh Cookies';
+                alert(data.message);
+                return;
+            }
+            // Open modal
+            modal.hidden = false;
+            modal.style.display = 'flex';
+            modal.classList.add('visible');
+            modalStatus.textContent = 'Opening TikTok login...';
+            pollRefreshStatus();
+        })
+        .catch(function (err) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = 'Refresh Cookies';
+            console.error(err);
+        });
+    });
+
+    function pollRefreshStatus() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(function () {
+            fetch('/api/v1/cookie-refresh/status')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                // Update status text
+                var s = data.status;
+                if (s === 'starting') {
+                    modalStatus.textContent = 'Opening TikTok login page...';
+                } else if (s === 'waiting_qr') {
+                    modalStatus.textContent = 'Loading QR code...';
+                } else if (s === 'waiting_scan') {
+                    modalStatus.textContent = 'Scan the QR code with your TikTok app';
+                    if (data.qr_available && !modalImg.src) {
+                        loadQR();
+                    }
+                } else if (s === 'success') {
+                    modalStatus.textContent = 'Login successful! Cookies exported.';
+                    finishRefresh(true);
+                } else if (s === 'failed') {
+                    modalStatus.textContent = 'Failed: ' + (data.error || 'unknown error');
+                    finishRefresh(false);
+                } else if (s === 'timeout') {
+                    modalStatus.textContent = 'Login timed out. Please try again.';
+                    finishRefresh(false);
+                } else if (s === 'cancelled') {
+                    finishRefresh(false);
+                }
+            })
+            .catch(function (err) { console.error(err); });
+        }, 2000);
+    }
+
+    function loadQR() {
+        fetch('/api/v1/cookie-refresh/qr')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.qr_base64) {
+                modalImg.src = 'data:image/png;base64,' + data.qr_base64;
+            }
+        })
+        .catch(function () {});
+    }
+
+    function finishRefresh(success) {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh Cookies';
+        if (success) {
+            setTimeout(function () {
+                modal.classList.remove('visible');
+                modal.hidden = true;
+                modal.style.display = 'none';
+                modalImg.src = '';
+                // Reload page to update cookie status
+                window.location.reload();
+            }, 2000);
+        }
+    }
+
+    modalClose.addEventListener('click', function () {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        modal.classList.remove('visible');
+        modal.hidden = true;
+        modal.style.display = 'none';
+        modalImg.src = '';
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh Cookies';
+        // Cancel the refresh server-side
+        fetch('/api/v1/cookie-refresh/cancel', { method: 'POST' });
+    });
+
+    if (modalCancel) {
+        modalCancel.addEventListener('click', function () {
+            fetch('/api/v1/cookie-refresh/cancel', { method: 'POST' })
+            .then(function () {
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                modal.classList.remove('visible');
+                modal.hidden = true;
+                modal.style.display = 'none';
+                modalImg.src = '';
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = 'Refresh Cookies';
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}

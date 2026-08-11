@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .downloader import download_profile, download_video
+from .cookie_refresh import ensure_fresh_cookies, is_cookie_auth_error
 from .manifest import ManifestStore
 from .proxy import rotate_tor_identity
 from .retry import WatchdogError, retry_with_backoff
@@ -214,6 +215,15 @@ def process_target(
     # yt-dlp output template: prefix with download dir (string concat, not Path)
     # because yt-dlp templates use %(field)s and forward slashes
     full_output_template = str(download_dir).rstrip("/") + "/" + output_template
+    auto_refresh_used = False
+
+    refresh_result = ensure_fresh_cookies(cookie_file=cookies_file, timeout=timeout)
+    if refresh_result.get("refresh_attempted"):
+        auto_refresh_used = True
+        if refresh_result.get("status") == "success":
+            print(f"Cookie refresh completed for {target}")
+        else:
+            print(f"Cookie refresh for {target}: {refresh_result.get('message', 'unknown error')}")
 
     def _download():
         if is_video_url(target):
@@ -310,6 +320,13 @@ def process_target(
             print(f"Watchdog timeout on {target}, rotating Tor identity...")
             rotate_tor_identity("127.0.0.1", 9051)
         except Exception as e:
+            if not auto_refresh_used and is_cookie_auth_error(e):
+                auto_refresh_used = True
+                refresh_result = ensure_fresh_cookies(cookie_file=cookies_file, timeout=timeout)
+                if refresh_result.get("status") == "success":
+                    print(f"Cookie refresh completed for {target}; retrying...")
+                    continue
+                print(f"Cookie refresh for {target}: {refresh_result.get('message', 'unknown error')}")
             attempt += 1
             if attempt >= max_attempts:
                 print(f"Failed: {target} -> {e}")

@@ -260,6 +260,36 @@ def test_watchdog_timeout_rotates_tor(tmp_cookies, tmp_path):
     assert mock_rot.call_count >= 1
 
 
+def test_process_target_refreshes_and_retries_on_cookie_auth_error(tmp_cookies, tmp_path):
+    config = {
+        "cookies_file": str(tmp_cookies),
+        "proxy_url": "",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 30,
+        "max_attempts": 2,
+    }
+
+    refresh_results = [
+        {"status": "ok", "message": "Cookies are valid", "refresh_attempted": False},
+        {"status": "success", "message": "Cookie refresh completed", "refresh_attempted": True},
+    ]
+
+    download_results = [
+        (1, "403 Forbidden"),
+        (0, "done"),
+    ]
+
+    with patch("tiktok_dl.cli.ensure_fresh_cookies", side_effect=refresh_results) as mock_refresh:
+        with patch("tiktok_dl.cli.download_video", side_effect=download_results) as mock_download:
+            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                result = process_target("https://tiktok.com/@user/video/1", config, download_dir=str(tmp_path))
+
+    assert result is True
+    assert mock_refresh.call_count == 2
+    assert mock_download.call_count == 2
+
+
 # ---------------------------------------------------------------------------
 # Scenario: Max attempts exceeded
 # ---------------------------------------------------------------------------

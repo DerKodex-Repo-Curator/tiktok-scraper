@@ -135,6 +135,39 @@ def cookie_status():
     return get_cookie_status(cookie_file)
 
 
+@router.post("/cookie-refresh")
+def start_cookie_refresh():
+    """Start a cookie refresh session (opens headless browser for QR login)."""
+    from tiktok_dl.cookie_refresh import start_refresh
+    return start_refresh(timeout=120)
+
+
+@router.get("/cookie-refresh/status")
+def cookie_refresh_status():
+    """Get cookie refresh progress status."""
+    from tiktok_dl.cookie_refresh import get_status
+    return get_status()
+
+
+@router.get("/cookie-refresh/qr")
+def cookie_refresh_qr():
+    """Get the QR code screenshot as base64 PNG."""
+    from fastapi.responses import JSONResponse
+    from tiktok_dl.cookie_refresh import get_qr_base64
+
+    qr = get_qr_base64()
+    if qr is None:
+        raise HTTPException(status_code=404, detail="QR code not available yet")
+    return {"qr_base64": qr}
+
+
+@router.post("/cookie-refresh/cancel")
+def cancel_cookie_refresh():
+    """Cancel an in-progress cookie refresh."""
+    from tiktok_dl.cookie_refresh import cancel_refresh
+    return cancel_refresh()
+
+
 @router.get("/thumbnail/{video_id}")
 def get_thumbnail(video_id: str):
     """Serve the thumbnail image for a video by its ID."""

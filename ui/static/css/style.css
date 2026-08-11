@@ -703,6 +703,114 @@ select:focus {
     color: var(--status-failed);
 }
 
+/* Refresh button */
+
+.btn-refresh {
+    margin-top: 0.5rem;
+    width: auto;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    border-color: var(--accent-2);
+    color: var(--accent-2);
+}
+
+.btn-refresh:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* QR Modal */
+
+.qr-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 250ms var(--ease-out);
+}
+
+.qr-modal[hidden] {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+.qr-modal.visible {
+    opacity: 1;
+}
+
+.qr-modal-content {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    max-width: 360px;
+    width: 90vw;
+    transform: scale(0.95);
+    transition: transform 250ms var(--ease-out);
+}
+
+.qr-modal.visible .qr-modal-content {
+    transform: scale(1);
+}
+
+.qr-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.qr-modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.qr-modal-close {
+    background: none;
+    border: none;
+    color: var(--fg-dim);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 0.3rem;
+    transition: color 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .qr-modal-close:hover { color: var(--fg); }
+}
+
+.qr-modal-body {
+    text-align: center;
+}
+
+.qr-image {
+    width: 240px;
+    height: 240px;
+    object-fit: contain;
+    margin: 0 auto 1rem;
+    display: block;
+    border-radius: var(--radius-sm);
+    background: #fff;
+    padding: 0.5rem;
+}
+
+.qr-modal-status {
+    font-size: 0.9rem;
+    color: var(--fg);
+    margin-bottom: 0.5rem;
+}
+
+.qr-modal-hint {
+    font-size: 0.8rem;
+    color: #666;
+    margin-bottom: 1rem;
+}
+
 /* ----------------------------------------------------------------------- */
 /* Footer                                                                  */
 /* ----------------------------------------------------------------------- */

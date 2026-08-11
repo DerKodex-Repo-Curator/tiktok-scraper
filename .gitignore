@@ -38,6 +38,11 @@ manifest.sqlite
 jobs.sqlite
 download_archive.txt
 
+# Local runtime state / browser smoke artifacts
+config/settings.json
+.playwright-mcp/
+ui-*.png
+
 # Cookies (sensitive)
 cookies.txt
 tiktok-cookies.txt

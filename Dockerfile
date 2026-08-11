@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --prefix=/install \
     "pydantic>=2.5" \
     "jinja2>=3.1" \
     "python-multipart>=0.0.9" \
+    "playwright>=1.40" \
     .
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,9 @@ LABEL org.opencontainers.image.title="tiktok-dl" \
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
+
+# Install Playwright Chromium browser + system deps for headless cookie refresh
+RUN playwright install chromium --with-deps
 
 # Create working directories for downloads, cookies, and config
 WORKDIR /app
