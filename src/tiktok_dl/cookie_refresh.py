@@ -42,6 +42,25 @@ _refresh_state: dict = {
 
 # TikTok login URL that shows QR code
 _TIKTOK_LOGIN_URL = "https://www.tiktok.com/login"
+_TIKTOK_LOGIN_QR_URL = "https://www.tiktok.com/login/qrcode"
+_TIKTOK_HOME_PROBE_URL = "https://www.tiktok.com/foryou"
+_TIKTOK_SUCCESS_URL_HINTS = ("/foryou",)
+
+_TIKTOK_AUTH_COOKIE_NAMES = {
+    "sessionid",
+    "sessionidss",
+    "sidtt",
+    "uidtt",
+    "uidttss",
+    "ttwid",
+    "mstoken",
+    "ttchaintoken",
+    "odintt",
+}
+
+_TIKTOK_AUTH_COOKIE_VALUES = {
+    "last_login_method": {"qrcode"},
+}
 
 
 def _get_cookie_file() -> str:
@@ -70,6 +89,264 @@ def _export_netscape_cookies(cookies: list[dict], file_path: str) -> None:
         include_sub = "TRUE" if domain.startswith(".") else "FALSE"
         lines.append(f"{domain}\t{include_sub}\t{path}\t{secure}\t{expiry}\t{name}\t{value}")
     Path(file_path).write_text("\n".join(lines) + "\n")
+
+
+def _qr_candidate_score(selector: str, box: dict) -> float:
+    """Score how likely a visible element is to be the QR container."""
+    width = float(box.get("width") or 0)
+    height = float(box.get("height") or 0)
+    if width <= 0 or height <= 0:
+        return -1.0
+
+    aspect = width / height
+    square_bonus = max(0.0, 1.0 - abs(aspect - 1.0))
+    size_bonus = min(width, height) / 500.0
+    selector_bonus = 0.0
+    sel = selector.lower()
+    if any(token in sel for token in ("qr", "code", "canvas", "iframe", "svg", "img")):
+        selector_bonus += 0.4
+    if width >= 120 and height >= 120:
+        selector_bonus += 0.2
+    return square_bonus + size_bonus + selector_bonus
+
+
+def _locator_has_text_hint(locator) -> bool:
+    """Return True when a locator contains QR/login instructions."""
+    try:
+        text = (locator.inner_text() or locator.text_content() or "").lower()
+    except Exception:
+        return False
+
+    hints = (
+        "scan",
+        "escanea",
+        "código",
+        "codigo",
+        "phone",
+        "cámara",
+        "camara",
+        "camera",
+        "qr",
+        "code",
+    )
+    return any(hint in text for hint in hints)
+
+
+def _best_visible_element(locator, min_score: float = 1.0):
+    """Return the best visible element from a locator collection."""
+    try:
+        count = min(locator.count(), 8)
+    except Exception:
+        return None
+
+    best_element = None
+    best_score = -1.0
+
+    for index in range(count):
+        element = locator.nth(index)
+        try:
+            box = element.bounding_box()
+        except Exception:
+            continue
+        if not box:
+            continue
+        score = _qr_candidate_score("", box)
+        if score > best_score:
+            best_score = score
+            best_element = element
+
+    if best_element is not None and best_score >= min_score:
+        return best_element
+    return None
+
+
+def _login_dialog_locators(page):
+    """Return locators that likely represent the TikTok login dialog."""
+    selectors = [
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+        '[class*="modal" i]',
+        '[class*="dialog" i]',
+        '[class*="login" i]',
+        '[id*="modal" i]',
+        '[id*="dialog" i]',
+        '[id*="login" i]',
+    ]
+
+    locators = []
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            count = min(locator.count(), 8)
+            for index in range(count):
+                candidate = locator.nth(index)
+                try:
+                    box = candidate.bounding_box()
+                except Exception:
+                    continue
+                if not box:
+                    continue
+                if _locator_has_text_hint(candidate):
+                    locators.append(candidate)
+                    continue
+                width = float(box.get("width") or 0)
+                height = float(box.get("height") or 0)
+                if width >= 200 and height >= 200:
+                    locators.append(candidate)
+        except Exception:
+            continue
+
+    return locators
+
+
+def _capture_qr_screenshot(page) -> bytes:
+    """Capture the TikTok login QR canvas inside the login dialog."""
+    dialog_candidates = _login_dialog_locators(page)
+
+    dialog_canvas_selectors = [
+        'canvas',
+        'svg',
+        'img[src*="qrcode" i]',
+        'img[alt*="qr" i]',
+        'img[aria-label*="qr" i]',
+        '[class*="qr" i]',
+        '[id*="qr" i]',
+        '[class*="code" i]',
+        '[id*="code" i]',
+        '[role="img"]',
+    ]
+
+    for dialog in dialog_candidates:
+        for selector in dialog_canvas_selectors:
+            try:
+                candidate = _best_visible_element(dialog.locator(selector))
+                if candidate is not None:
+                    return candidate.screenshot()
+            except Exception:
+                continue
+
+    selectors = [
+        '[role="dialog"] canvas',
+        '[aria-modal="true"] canvas',
+        '[class*="modal" i] canvas',
+        '[class*="dialog" i] canvas',
+        '[class*="login" i] canvas',
+        '[role="dialog"] svg',
+        '[aria-modal="true"] svg',
+        '[class*="modal" i] svg',
+        '[class*="dialog" i] svg',
+        '[class*="login" i] svg',
+        'iframe',
+        'canvas',
+        'svg',
+        'img[src*="qrcode" i]',
+        'img[alt*="qr" i]',
+        'img[aria-label*="qr" i]',
+        '[class*="qr" i]',
+        '[id*="qr" i]',
+        '[class*="code" i]',
+        '[id*="code" i]',
+        '[role="img"]',
+    ]
+
+    best_element = None
+    best_score = -1.0
+
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            count = min(locator.count(), 8)
+            for index in range(count):
+                element = locator.nth(index)
+                box = element.bounding_box()
+                if not box:
+                    continue
+                score = _qr_candidate_score(selector, box)
+                if score > best_score:
+                    best_score = score
+                    best_element = element
+        except Exception:
+            continue
+
+    if best_element is not None and best_score >= 1.0:
+        return best_element.screenshot()
+
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    width = int(viewport.get("width", 1280))
+    height = int(viewport.get("height", 720))
+    crop = min(720, width, height)
+    clip = {
+        "x": max(int((width - crop) / 2), 0),
+        "y": max(int((height - crop) / 2), 0),
+        "width": crop,
+        "height": crop,
+    }
+    return page.screenshot(clip=clip)
+
+
+def _has_tiktok_auth_cookie(cookies: list[dict]) -> bool:
+    """Return True when the browser has likely authenticated TikTok cookies."""
+    for cookie in cookies:
+        name = str(cookie.get("name", "")).lower()
+        if not name:
+            continue
+        normalized_name = name.replace("_", "").replace("-", "")
+        if normalized_name in _TIKTOK_AUTH_COOKIE_NAMES:
+            return True
+        if name in _TIKTOK_AUTH_COOKIE_VALUES:
+            value = str(cookie.get("value", "")).strip().lower()
+            if value in _TIKTOK_AUTH_COOKIE_VALUES[name]:
+                return True
+    return False
+
+
+def _page_has_tiktok_success_url(page) -> bool:
+    """Return True when a page has reached TikTok's post-login feed."""
+    current_url = (getattr(page, "url", "") or "").lower()
+    return any(hint in current_url for hint in _TIKTOK_SUCCESS_URL_HINTS)
+
+
+def _refresh_login_succeeded(page, context) -> bool:
+    """Return True when TikTok login has clearly succeeded."""
+    try:
+        cookies = context.cookies()
+    except Exception:
+        cookies = []
+    if _has_tiktok_auth_cookie(cookies):
+        return True
+
+    if _page_has_tiktok_success_url(page):
+        return True
+
+    for candidate in getattr(context, "pages", []) or []:
+        if _page_has_tiktok_success_url(candidate):
+            return True
+
+    return _probe_tiktok_authenticated_session(context)
+
+
+def _probe_tiktok_authenticated_session(context) -> bool:
+    """Open a safe probe page and check whether TikTok accepts the session."""
+    probe_page = None
+    try:
+        probe_page = context.new_page()
+        try:
+            probe_page.goto(_TIKTOK_HOME_PROBE_URL, wait_until="domcontentloaded", timeout=15000)
+        except Exception:
+            return False
+
+        current_url = (getattr(probe_page, "url", "") or "").lower()
+        if any(token in current_url for token in ("/login", "login", "/signup", "signup")):
+            return False
+        return True
+    except Exception:
+        return False
+    finally:
+        if probe_page is not None:
+            try:
+                probe_page.close()
+            except Exception:
+                pass
 
 
 def _run_refresh_async(timeout: int, cookie_file: Optional[str] = None) -> None:
@@ -106,54 +383,36 @@ def _run_refresh_async(timeout: int, cookie_file: Optional[str] = None) -> None:
             _refresh_state["page"] = page
             _refresh_state["status"] = "starting"
 
-            # Navigate to TikTok login page
-            page.goto(_TIKTOK_LOGIN_URL, wait_until="networkidle", timeout=30000)
+            # Navigate directly to the QR login view. TikTok keeps the QR on a
+            # separate login/qrcode route; the plain login page only shows the
+            # options menu.
+            try:
+                page.goto(_TIKTOK_LOGIN_QR_URL, wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                page.goto(_TIKTOK_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(2)
+                try:
+                    page.get_by_role("link", name="Usar código QR").click(timeout=5000)
+                    page.wait_for_load_state("domcontentloaded", timeout=30000)
+                except Exception:
+                    page.goto(_TIKTOK_LOGIN_QR_URL, wait_until="domcontentloaded", timeout=30000)
+
             _refresh_state["status"] = "waiting_qr"
 
-            # Wait for page to render
+            # Wait for the QR canvas to render.
             time.sleep(3)
             _refresh_state["status"] = "waiting_qr"
 
-            # Take a screenshot of the login area — TikTok's QR is often
-            # in a canvas or iframe that's hard to select by CSS.
-            # Try to find the QR container, fallback to full page screenshot.
-            qr_bytes = None
-            selectors = [
-                'canvas',
-                'img[src*="qrcode"]',
-                'img[src*="data:image"]',
-                'div[class*="qrcode"]',
-                'div[class*="qr-code"]',
-                'div[class*="login"]',
-            ]
-            for sel in selectors:
-                try:
-                    el = page.query_selector(sel)
-                    if el:
-                        box = el.bounding_box()
-                        if box and box["width"] > 50 and box["height"] > 50:
-                            qr_bytes = el.screenshot()
-                            break
-                except Exception:
-                    continue
-
-            if not qr_bytes:
-                # Fallback: screenshot the full page
-                qr_bytes = page.screenshot()
+            # Take a screenshot of the QR area, or a centered crop if TikTok
+            # renders the login card differently than expected.
+            qr_bytes = _capture_qr_screenshot(page)
 
             _refresh_state["qr_base64"] = base64.b64encode(qr_bytes).decode("ascii")
             _refresh_state["status"] = "waiting_scan"
 
-            # Poll for login success (URL change or cookie presence)
+            # Poll for login success using post-approval URL and cookie signals.
             while time.time() - start < timeout:
-                current_url = page.url
-                # Login success: redirected away from login page
-                if "/login" not in current_url and "login" not in current_url.lower():
-                    break
-                # Also check if session cookies appeared
-                cookies = context.cookies()
-                has_session = any(c.get("name") in ("sessionid", "sessionid_ss", "sid_tt") for c in cookies)
-                if has_session:
+                if _refresh_login_succeeded(page, context):
                     break
                 time.sleep(2)
             else:

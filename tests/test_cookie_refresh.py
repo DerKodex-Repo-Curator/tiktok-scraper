@@ -13,6 +13,12 @@ from tiktok_dl.cookie_refresh import (
     cancel_refresh,
     ensure_fresh_cookies,
     is_cookie_auth_error,
+    _capture_qr_screenshot,
+    _qr_candidate_score,
+    _has_tiktok_auth_cookie,
+    _page_has_tiktok_success_url,
+    _refresh_login_succeeded,
+    _probe_tiktok_authenticated_session,
     _export_netscape_cookies,
     _netscape_cookie_header,
     _refresh_state,
@@ -181,3 +187,241 @@ def test_ensure_fresh_cookies_reports_refresh_start_failure(tmp_path):
     assert result["status"] == "error"
     assert "Playwright not installed" in result["message"]
     assert result["refresh_attempted"] is True
+
+
+def test_qr_candidate_score_prefers_square_qr_like_elements():
+    square = _qr_candidate_score('img[alt*="qr" i]', {"width": 280, "height": 280})
+    banner = _qr_candidate_score('div[class*="login"]', {"width": 900, "height": 180})
+    assert square > banner
+
+
+def test_has_tiktok_auth_cookie_detects_expanded_names():
+    assert _has_tiktok_auth_cookie([
+        {"name": "sessionid"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "sessionid_ss"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "sid_tt"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "uid_tt"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "uid_tt_ss"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "ttwid"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "msToken"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "tt_chain_token"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "odin_tt"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "last_login_method", "value": "QRcode"},
+    ]) is True
+    assert _has_tiktok_auth_cookie([
+        {"name": "something_else"},
+        {"name": "another"},
+    ]) is False
+
+
+def test_page_has_tiktok_success_url_detects_foryou_navigation():
+    class FakePage:
+        def __init__(self, url):
+            self.url = url
+
+    assert _page_has_tiktok_success_url(FakePage("https://www.tiktok.com/foryou?lang=es-419")) is True
+    assert _page_has_tiktok_success_url(FakePage("https://www.tiktok.com/login")) is False
+
+
+def test_refresh_login_succeeded_accepts_foryou_or_auth_cookies():
+    class FakePage:
+        def __init__(self, url):
+            self.url = url
+
+    class FakeContext:
+        def __init__(self, cookies, pages=None):
+            self._cookies = cookies
+            self.pages = pages or []
+
+        def cookies(self):
+            return self._cookies
+
+    login_page = FakePage("https://www.tiktok.com/login")
+    foryou_page = FakePage("https://www.tiktok.com/foryou?lang=es-419")
+
+    assert _refresh_login_succeeded(login_page, FakeContext([{ "name": "tt_chain_token" }])) is True
+    assert _refresh_login_succeeded(login_page, FakeContext([{ "name": "last_login_method", "value": "QRcode" }])) is True
+    assert _refresh_login_succeeded(login_page, FakeContext([], pages=[foryou_page])) is True
+    assert _refresh_login_succeeded(login_page, FakeContext([], pages=[login_page])) is False
+
+
+def test_probe_tiktok_authenticated_session_uses_probe_page_and_closes_it():
+    class FakeProbePage:
+        def __init__(self):
+            self.url = "https://www.tiktok.com/foryou"
+            self.got = None
+            self.closed = False
+
+        def goto(self, url, wait_until=None, timeout=None):
+            self.got = (url, wait_until, timeout)
+
+        def close(self):
+            self.closed = True
+
+    class FakeContext:
+        def __init__(self):
+            self.created = []
+
+        def new_page(self):
+            page = FakeProbePage()
+            self.created.append(page)
+            return page
+
+    context = FakeContext()
+
+    assert _probe_tiktok_authenticated_session(context) is True
+    assert len(context.created) == 1
+    assert context.created[0].got[0] == "https://www.tiktok.com/foryou"
+    assert context.created[0].closed is True
+
+
+def test_probe_tiktok_authenticated_session_rejects_login_redirect():
+    class FakeProbePage:
+        def __init__(self):
+            self.url = "https://www.tiktok.com/login"
+            self.closed = False
+
+        def goto(self, url, wait_until=None, timeout=None):
+            self.url = "https://www.tiktok.com/login"
+
+        def close(self):
+            self.closed = True
+
+    class FakeContext:
+        def new_page(self):
+            return FakeProbePage()
+
+    assert _probe_tiktok_authenticated_session(FakeContext()) is False
+
+
+def test_capture_qr_screenshot_prefers_canvas_inside_login_dialog():
+    class FakeElement:
+        def __init__(self, name, box, payload, text="", children=None):
+            self.name = name
+            self.box = box
+            self.payload = payload
+            self.text = text
+            self.children = children or {}
+            self.clicked = False
+
+        def bounding_box(self):
+            return self.box
+
+        def screenshot(self):
+            self.clicked = True
+            return self.payload
+
+        def inner_text(self):
+            return self.text
+
+        def text_content(self):
+            return self.text
+
+        def locator(self, selector):
+            return FakeLocator(self.children.get(selector, []))
+
+    class FakeLocator:
+        def __init__(self, items):
+            self.items = items
+
+        def count(self):
+            return len(self.items)
+
+        def nth(self, index):
+            return self.items[index]
+
+        def inner_text(self):
+            return self.items[0].inner_text() if self.items else ""
+
+        def text_content(self):
+            return self.items[0].text_content() if self.items else ""
+
+        def locator(self, selector):
+            nested = []
+            for item in self.items:
+                nested.extend(item.children.get(selector, []))
+            return FakeLocator(nested)
+
+    class FakePage:
+        def __init__(self, mapping):
+            self.mapping = mapping
+            self.clip = None
+            self.full_page_called = False
+            self.viewport_size = {"width": 1280, "height": 720}
+
+        def locator(self, selector):
+            return FakeLocator(self.mapping.get(selector, []))
+
+        def screenshot(self, clip=None):
+            self.clip = clip
+            self.full_page_called = True
+            return b"fallback"
+
+    qr = FakeElement("qr", {"width": 170, "height": 170}, b"qr-bytes")
+    dialog = FakeElement(
+        "dialog",
+        {"width": 560, "height": 560},
+        b"dialog-bytes",
+        text="Escanea el código con la cámara del teléfono",
+        children={
+            'canvas': [qr],
+            'img[alt*="qr" i]': [FakeElement("placeholder", {"width": 20, "height": 20}, b"placeholder")],
+        },
+    )
+    promo = FakeElement("promo", {"width": 900, "height": 180}, b"promo-bytes")
+    page = FakePage({
+        '[role="dialog"]': [dialog],
+        'canvas': [promo],
+        'img[alt*="qr" i]': [FakeElement("page-placeholder", {"width": 20, "height": 20}, b"page-placeholder")],
+    })
+
+    result = _capture_qr_screenshot(page)
+
+    assert result == b"qr-bytes"
+    assert qr.clicked is True
+    assert promo.clicked is False
+    assert page.full_page_called is False
+
+
+def test_capture_qr_screenshot_falls_back_to_center_crop():
+    class FakeLocator:
+        def count(self):
+            return 0
+
+    class FakePage:
+        def __init__(self):
+            self.viewport_size = {"width": 1280, "height": 720}
+            self.clip = None
+
+        def locator(self, selector):
+            return FakeLocator()
+
+        def screenshot(self, clip=None):
+            self.clip = clip
+            return b"fallback"
+
+    page = FakePage()
+    result = _capture_qr_screenshot(page)
+
+    assert result == b"fallback"
+    assert page.clip is not None
+    assert page.clip["width"] <= 720
+    assert page.clip["height"] <= 720
