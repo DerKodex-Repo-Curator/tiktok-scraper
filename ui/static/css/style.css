@@ -703,112 +703,61 @@ select:focus {
     color: var(--status-failed);
 }
 
-/* Refresh button */
-
-.btn-refresh {
-    margin-top: 0.5rem;
-    width: auto;
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
-    border-color: var(--accent-2);
+.cookie-info {
+    background: rgba(37, 244, 238, 0.08);
+    border: 1px solid rgba(37, 244, 238, 0.3);
     color: var(--accent-2);
 }
 
-.btn-refresh:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
+/* Cookie guide (collapsible) */
 
-/* QR Modal */
-
-.qr-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-    opacity: 0;
-    transition: opacity 250ms var(--ease-out);
-}
-
-.qr-modal[hidden] {
-    display: none !important;
-    pointer-events: none !important;
-}
-
-.qr-modal.visible {
-    opacity: 1;
-}
-
-.qr-modal-content {
-    background: var(--card);
+.cookie-guide {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.5rem;
-    max-width: 360px;
-    width: 90vw;
-    transform: scale(0.95);
-    transition: transform 250ms var(--ease-out);
+    border-radius: var(--radius-sm);
 }
 
-.qr-modal.visible .qr-modal-content {
-    transform: scale(1);
-}
-
-.qr-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-
-.qr-modal-header h2 {
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.qr-modal-close {
-    background: none;
-    border: none;
-    color: var(--fg-dim);
-    font-size: 1.5rem;
+.cookie-guide summary {
     cursor: pointer;
-    line-height: 1;
-    padding: 0 0.3rem;
-    transition: color 160ms var(--ease-out);
+    font-size: 0.85rem;
+    color: var(--accent-2);
+    user-select: none;
+    transition: opacity 160ms var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
-    .qr-modal-close:hover { color: var(--fg); }
+    .cookie-guide summary:hover { opacity: 0.8; }
 }
 
-.qr-modal-body {
-    text-align: center;
+.cookie-guide ol {
+    margin-top: 0.75rem;
+    padding-left: 1.5rem;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: var(--fg-dim);
 }
 
-.qr-image {
-    width: 240px;
-    height: 240px;
-    object-fit: contain;
-    margin: 0 auto 1rem;
-    display: block;
-    border-radius: var(--radius-sm);
-    background: #fff;
-    padding: 0.5rem;
+.cookie-guide li {
+    margin-bottom: 0.4rem;
 }
 
-.qr-modal-status {
-    font-size: 0.9rem;
+.cookie-guide a {
+    color: var(--accent-2);
+    text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .cookie-guide a:hover { text-decoration: underline; }
+}
+
+.cookie-guide code {
+    background: var(--card);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.82rem;
     color: var(--fg);
-    margin-bottom: 0.5rem;
-}
-
-.qr-modal-hint {
-    font-size: 0.8rem;
-    color: #666;
-    margin-bottom: 1rem;
 }
 
 /* ----------------------------------------------------------------------- */
