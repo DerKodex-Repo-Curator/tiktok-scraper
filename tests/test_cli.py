@@ -655,6 +655,33 @@ def test_profile_branch_marks_skipped_for_already_downloaded(monkeypatch, tmp_pa
     assert meta["status"] == "skipped"
 
 
+def test_download_marks_skipped_for_ytdlp_recorded_in_archive_phrasing(monkeypatch):
+    """yt-dlp's actual archive-hit phrasing is 'has already been recorded in
+    the archive' (not 'already downloaded'). Must still be detected as skipped.
+    Regression test for the stale-archive edge case caught in Docker e2e.
+    """
+    monkeypatch.setattr(
+        "tiktok_dl.cli.download_video",
+        lambda **kw: (0, "[download] 7670174651905182996: has already been recorded in the archive"),
+    )
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    status, result = _download_single_video(
+        "https://tiktok.com/@u/video/1",
+        cookies_file=None,
+        proxy_url="socks5h://h:9050",
+        full_output_template="%(id)s.%(ext)s",
+        format_str="",
+        archive_path="/tmp/archive.txt",
+        max_attempts=3,
+        video_id="1",
+        download_dir=".",
+        output_template="%(id)s.%(ext)s",
+    )
+    assert status == "skipped", f"expected skipped, got {status} (yt-dlp archive-hit phrasing not detected)"
+
+
 def test_profile_branch_stores_verified_path(monkeypatch, tmp_path):
     """Profile branch: verified download stores the file path in manifest."""
     f = tmp_path / "v1 title.mp4"

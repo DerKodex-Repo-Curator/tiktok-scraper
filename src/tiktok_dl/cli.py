@@ -290,8 +290,11 @@ def _download_single_video(
             raise Exception(f"download failed: {output}")
         # yt-dlp exits 0 when the video is already in --download-archive.
         # That is not a download — mark it skipped so the manifest stays honest.
+        # yt-dlp's phrasing is "has already been recorded in the archive"
+        # (and historically "already downloaded"); match both phrasings and
+        # the "recorded in" archive-hit phrasing.
         lowered = output.lower()
-        if "already" in lowered and "downloaded" in lowered:
+        if "already" in lowered and ("recorded in" in lowered or "downloaded" in lowered):
             return ("skipped", output)
         # yt-dlp exited 0 — verify the file actually landed on disk.
         if vid:
