@@ -14,14 +14,15 @@ def test_download_video_calls_yt_dlp():
     mock_result.stderr = ""
     
     with patch("tiktok_dl.downloader.subprocess.run", return_value=mock_result) as mock_run:
-        exit_code, output = download_video(
-            url="https://www.tiktok.com/@user/video/123",
-            cookies_path="/tmp/cookies.txt",
-            proxy_url="socks5h://proxyto.hs.sof.ar:9050",
-            output_template="/downloads/%(id)s.%(ext)s",
-            format_str="best",
-            download_archive="/downloads/archive.txt"
-        )
+        with patch("tiktok_dl.downloader.Path.exists", return_value=True):
+            exit_code, output = download_video(
+                url="https://www.tiktok.com/@user/video/123",
+                cookies_path="/tmp/cookies.txt",
+                proxy_url="socks5h://proxyto.hs.sof.ar:9050",
+                output_template="/downloads/%(id)s.%(ext)s",
+                format_str="best",
+                download_archive="/downloads/archive.txt"
+            )
         
         assert exit_code == 0
         call_args = mock_run.call_args[0][0]
@@ -32,6 +33,54 @@ def test_download_video_calls_yt_dlp():
         assert "--download-archive" in call_args
         assert "--format" in call_args
         assert "--output" in call_args
+
+
+def test_download_video_without_cookies():
+    """Test that download_video omits --cookies when cookies_path is empty."""
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "test output"
+    mock_result.stderr = ""
+
+    with patch("tiktok_dl.downloader.subprocess.run", return_value=mock_result) as mock_run:
+        exit_code, output = download_video(
+            url="https://www.tiktok.com/@user/video/123",
+            cookies_path="",
+            proxy_url="socks5h://proxyto.hs.sof.ar:9050",
+            output_template="/downloads/%(id)s.%(ext)s",
+            format_str="best",
+            download_archive="/downloads/archive.txt"
+        )
+
+        assert exit_code == 0
+        call_args = mock_run.call_args[0][0]
+        assert "yt-dlp" in call_args
+        assert "--cookies" not in call_args
+        assert "--proxy" in call_args
+        assert "--impersonate" in call_args
+
+
+def test_download_video_with_missing_cookies_file():
+    """Test that download_video omits --cookies when the file does not exist."""
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "test output"
+    mock_result.stderr = ""
+
+    with patch("tiktok_dl.downloader.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("tiktok_dl.downloader.Path.exists", return_value=False):
+            exit_code, output = download_video(
+                url="https://www.tiktok.com/@user/video/123",
+                cookies_path="/tmp/missing-cookies.txt",
+                proxy_url="socks5h://proxyto.hs.sof.ar:9050",
+                output_template="/downloads/%(id)s.%(ext)s",
+                format_str="best",
+                download_archive="/downloads/archive.txt"
+            )
+
+        assert exit_code == 0
+        call_args = mock_run.call_args[0][0]
+        assert "--cookies" not in call_args
 
 
 def test_download_video_timeout():

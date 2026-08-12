@@ -7,7 +7,7 @@ from pathlib import Path
 
 def download_video(
     url: str,
-    cookies_path: str,
+    cookies_path: Optional[str],
     proxy_url: str,
     output_template: str,
     format_str: str,
@@ -16,10 +16,13 @@ def download_video(
     """
     Invoke yt-dlp to download a single video.
     Returns (exit_code, stdout+stderr).
+
+    Cookies are optional: ``--cookies`` is only added when ``cookies_path``
+    is truthy and points to an existing file. Public videos download fine
+    without cookies.
     """
     cmd = [
         "yt-dlp",
-        "--cookies", cookies_path,
         "--proxy", proxy_url,
         "--impersonate", "chrome",
         "--download-archive", download_archive,
@@ -27,6 +30,8 @@ def download_video(
         "--write-thumbnail",
         "--newline",
     ]
+    if cookies_path and Path(cookies_path).exists():
+        cmd.extend(["--cookies", cookies_path])
     if format_str:
         cmd.extend(["--format", format_str])
     cmd.append(url)
@@ -44,7 +49,7 @@ def download_video(
 
 def download_profile(
     username: str,
-    cookies_path: str,
+    cookies_path: Optional[str],
     proxy_url: str,
     output_template: str,
     format_str: str,
@@ -54,17 +59,21 @@ def download_profile(
     """
     Enumerate profile via --flat-playlist --dump-json, then download each video.
     Returns list of video metadata dicts.
+
+    Cookies are optional: ``--cookies`` is only added when ``cookies_path``
+    is truthy and points to an existing file.
     """
     json_path = str(Path(download_archive).parent / "tmp_json.txt")
     
     data_cmd = [
         "yt-dlp",
-        "--cookies", cookies_path,
         "--proxy", proxy_url,
         "--impersonate", "chrome",
         "--flat-playlist",
         "--dump-json",
     ]
+    if cookies_path and Path(cookies_path).exists():
+        data_cmd.extend(["--cookies", cookies_path])
     if max_videos is not None:
         data_cmd.extend(["--playlist-end", str(max_videos)])
     data_cmd.append(username)

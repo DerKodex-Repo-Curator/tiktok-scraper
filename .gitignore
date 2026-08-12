@@ -42,8 +42,6 @@ download_archive.txt
 config/settings.json
 .playwright-mcp/
 ui-*.png
-qr-*-smoke.png
-*-smoke.png
 
 # Cookies (sensitive)
 cookies.txt

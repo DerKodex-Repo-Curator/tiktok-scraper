@@ -125,47 +125,29 @@ def health() -> HealthResponse:
 
 @router.get("/cookie-status")
 def cookie_status():
-    """Check cookie file expiry status."""
+    """Check cookie file expiry status.
+
+    Returns ``{"status": "no_cookies", ...}`` when no cookie file is
+    configured — downloads proceed without cookies for public videos.
+    """
     import os
     from tiktok_dl.cookies import get_cookie_status
     from tiktok_dl.config import load_config
 
     cfg = load_config()
     cookie_file = cfg.get("cookie_file") or os.environ.get("COOKIE_FILE", "")
+    if not cookie_file:
+        return {
+            "exists": False,
+            "status": "no_cookies",
+            "message": "No cookie file configured",
+            "total_cookies": 0,
+            "expired": [],
+            "expiring_soon": [],
+            "valid_days": None,
+            "critical_cookie": None,
+        }
     return get_cookie_status(cookie_file)
-
-
-@router.post("/cookie-refresh")
-def start_cookie_refresh():
-    """Start a cookie refresh session (opens headless browser for QR login)."""
-    from tiktok_dl.cookie_refresh import start_refresh
-    return start_refresh(timeout=120)
-
-
-@router.get("/cookie-refresh/status")
-def cookie_refresh_status():
-    """Get cookie refresh progress status."""
-    from tiktok_dl.cookie_refresh import get_status
-    return get_status()
-
-
-@router.get("/cookie-refresh/qr")
-def cookie_refresh_qr():
-    """Get the QR code screenshot as base64 PNG."""
-    from fastapi.responses import JSONResponse
-    from tiktok_dl.cookie_refresh import get_qr_base64
-
-    qr = get_qr_base64()
-    if qr is None:
-        raise HTTPException(status_code=404, detail="QR code not available yet")
-    return {"qr_base64": qr}
-
-
-@router.post("/cookie-refresh/cancel")
-def cancel_cookie_refresh():
-    """Cancel an in-progress cookie refresh."""
-    from tiktok_dl.cookie_refresh import cancel_refresh
-    return cancel_refresh()
 
 
 @router.get("/thumbnail/{video_id}")

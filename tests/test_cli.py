@@ -204,29 +204,36 @@ def test_proxy_cli_overrides_env(tmp_cookies, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_no_cookies_file_returns_error(tmp_path):
-    """Scenario: running without --cookies-file returns exit code 1."""
-    with patch("tiktok_dl.cli.download_profile") as mock_dl:
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("COOKIE_FILE", None)
-            with patch("sys.argv", ["tiktok-dl", "@user"]):
-                os.chdir(tmp_path)
-                exit_code = main()
-    assert exit_code == 1
-    mock_dl.assert_not_called()
+def test_no_cookies_file_warns_and_continues(tmp_path):
+    """Scenario: running without --cookies-file warns and continues (public videos)."""
+    with patch("tiktok_dl.cli.download_profile", return_value=[]) as mock_dl:
+        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+            with patch("tiktok_dl.cli.ManifestStore"):
+                with patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("COOKIE_FILE", None)
+                    with patch("sys.argv", ["tiktok-dl", "@user"]):
+                        os.chdir(tmp_path)
+                        exit_code = main()
+    assert exit_code == 0
+    mock_dl.assert_called_once()
 
 
-def test_missing_cookies_file_returns_error(tmp_path):
-    """Scenario: --cookies-file points to non-existent file -> exit 1."""
-    with patch("tiktok_dl.cli.download_profile") as mock_dl:
-        with patch("sys.argv", [
-            "tiktok-dl", "@user",
-            "--cookies-file", str(tmp_path / "nonexistent.txt"),
-        ]):
-            os.chdir(tmp_path)
-            exit_code = main()
-    assert exit_code == 1
-    mock_dl.assert_not_called()
+def test_missing_cookies_file_warns_and_continues(tmp_path):
+    """Scenario: --cookies-file points to non-existent file -> warns and continues."""
+    with patch("tiktok_dl.cli.download_profile", return_value=[]) as mock_dl:
+        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+            with patch("tiktok_dl.cli.ManifestStore"):
+                with patch("sys.argv", [
+                    "tiktok-dl", "@user",
+                    "--cookies-file", str(tmp_path / "nonexistent.txt"),
+                ]):
+                    os.chdir(tmp_path)
+                    exit_code = main()
+    assert exit_code == 0
+    mock_dl.assert_called_once()
+    args, kwargs = mock_dl.call_args
+    cookies = kwargs.get("cookies_path") or (args[1] if len(args) > 1 else None)
+    assert cookies in (None, "", "None")
 
 
 # ---------------------------------------------------------------------------
@@ -258,36 +265,6 @@ def test_watchdog_timeout_rotates_tor(tmp_cookies, tmp_path):
                         exit_code = main()
     assert exit_code == 0
     assert mock_rot.call_count >= 1
-
-
-def test_process_target_refreshes_and_retries_on_cookie_auth_error(tmp_cookies, tmp_path):
-    config = {
-        "cookies_file": str(tmp_cookies),
-        "proxy_url": "",
-        "output_template": "%(id)s.%(ext)s",
-        "format_str": "",
-        "timeout": 30,
-        "max_attempts": 2,
-    }
-
-    refresh_results = [
-        {"status": "ok", "message": "Cookies are valid", "refresh_attempted": False},
-        {"status": "success", "message": "Cookie refresh completed", "refresh_attempted": True},
-    ]
-
-    download_results = [
-        (1, "403 Forbidden"),
-        (0, "done"),
-    ]
-
-    with patch("tiktok_dl.cli.ensure_fresh_cookies", side_effect=refresh_results) as mock_refresh:
-        with patch("tiktok_dl.cli.download_video", side_effect=download_results) as mock_download:
-            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-                result = process_target("https://tiktok.com/@user/video/1", config, download_dir=str(tmp_path))
-
-    assert result is True
-    assert mock_refresh.call_count == 2
-    assert mock_download.call_count == 2
 
 
 # ---------------------------------------------------------------------------
