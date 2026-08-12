@@ -5,6 +5,29 @@ from typing import Tuple, List, Dict, Optional
 from pathlib import Path
 
 
+_impersonate_cache: Optional[bool] = None
+
+
+def _impersonate_available() -> bool:
+    """Return True if yt-dlp can impersonate Chrome (requires curl_cffi).
+
+    Runs ``yt-dlp --list-impersonate-targets`` once and caches the result
+    so we don't spawn a subprocess on every call.
+    """
+    global _impersonate_cache
+    if _impersonate_cache is not None:
+        return _impersonate_cache
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--list-impersonate-targets"],
+            capture_output=True, text=True, timeout=10,
+        )
+        _impersonate_cache = "Chrome" in result.stdout and "unavailable" not in result.stdout.split("Chrome")[1].split("\n")[0]
+    except Exception:
+        _impersonate_cache = False
+    return _impersonate_cache
+
+
 def download_video(
     url: str,
     cookies_path: Optional[str],
@@ -24,12 +47,13 @@ def download_video(
     cmd = [
         "yt-dlp",
         "--proxy", proxy_url,
-        "--impersonate", "chrome",
         "--download-archive", download_archive,
         "--output", output_template,
         "--write-thumbnail",
         "--newline",
     ]
+    if _impersonate_available():
+        cmd.extend(["--impersonate", "chrome"])
     if cookies_path and Path(cookies_path).exists():
         cmd.extend(["--cookies", cookies_path])
     if format_str:
@@ -68,10 +92,11 @@ def download_profile(
     data_cmd = [
         "yt-dlp",
         "--proxy", proxy_url,
-        "--impersonate", "chrome",
         "--flat-playlist",
         "--dump-json",
     ]
+    if _impersonate_available():
+        data_cmd.extend(["--impersonate", "chrome"])
     if cookies_path and Path(cookies_path).exists():
         data_cmd.extend(["--cookies", cookies_path])
     if max_videos is not None:
