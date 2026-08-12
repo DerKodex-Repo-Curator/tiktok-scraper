@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 from .jobstore import get_job, update_job
+from .models import JobProgress
 
 
 def run_download_job(job_id: str, target: str, range_limit: int | None = None) -> None:
@@ -37,6 +38,17 @@ def run_download_job(job_id: str, target: str, range_limit: int | None = None) -
         except Exception:
             pass
 
+        def _progress(downloaded, skipped, failed, total):
+            update_job(
+                job_id,
+                progress=JobProgress(
+                    downloaded=downloaded,
+                    skipped=skipped,
+                    failed=failed,
+                    total=total,
+                ),
+            )
+
         success = process_target(target, {
             "cookies_file": cfg.get("cookie_file") or os.environ.get("COOKIE_FILE"),
             "proxy_url": cfg.get("proxy_url", "socks5h://proxyto.hs.sof.ar:9050"),
@@ -47,7 +59,7 @@ def run_download_job(job_id: str, target: str, range_limit: int | None = None) -
             "output_template": cfg.get("output_template", "%(uploader)s/%(id)s %(title)s.%(ext)s"),
             "range": range_limit,
             "new_items": None,
-        }, download_dir=output_dir, manifest=manifest)
+        }, download_dir=output_dir, manifest=manifest, progress_callback=_progress)
         if success:
             update_job(job_id, status="completed")
         else:

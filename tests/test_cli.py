@@ -242,29 +242,28 @@ def test_missing_cookies_file_warns_and_continues(tmp_path):
 
 
 def test_watchdog_timeout_rotates_tor(tmp_cookies, tmp_path):
-    """Scenario: download times out -> rotates Tor identity -> retries."""
+    """Scenario: a single video download fails then succeeds on retry (fresh proxy per attempt)."""
     call_count = {"n": 0}
 
     def fake_download(*a, **kw):
         call_count["n"] += 1
         if call_count["n"] < 2:
-            from tiktok_dl.retry import WatchdogError
-            raise WatchdogError("timeout")
+            raise Exception("403 forbidden")
         return (0, "ok")
 
     with patch("tiktok_dl.cli.download_video", side_effect=fake_download):
-        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-            with patch("tiktok_dl.cli.rotate_tor_identity", return_value=True) as mock_rot:
-                with patch("tiktok_dl.cli.ManifestStore"):
-                    with patch("sys.argv", [
-                        "tiktok-dl", "https://tiktok.com/@u/video/1",
-                        "--cookies-file", str(tmp_cookies),
-                        "--max-attempts", "3",
-                    ]):
-                        os.chdir(tmp_path)
-                        exit_code = main()
+        with patch("tiktok_dl.cli.build_proxy_url", return_value="socks5h://g:dummy@h:9050") as mock_proxy:
+            with patch("tiktok_dl.cli.ManifestStore"):
+                with patch("sys.argv", [
+                    "tiktok-dl", "https://tiktok.com/@u/video/1",
+                    "--cookies-file", str(tmp_cookies),
+                    "--max-attempts", "3",
+                ]):
+                    os.chdir(tmp_path)
+                    exit_code = main()
     assert exit_code == 0
-    assert mock_rot.call_count >= 1
+    # build_proxy_url should be called once per attempt (2 attempts: fail then succeed)
+    assert mock_proxy.call_count >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -274,22 +273,20 @@ def test_watchdog_timeout_rotates_tor(tmp_cookies, tmp_path):
 
 def test_max_attempts_exceeded(tmp_cookies, tmp_path):
     """Scenario: all retries fail -> returns exit code 1."""
-    from tiktok_dl.retry import WatchdogError
 
     def always_fail(*a, **kw):
-        raise WatchdogError("timeout")
+        raise Exception("403 timeout")
 
     with patch("tiktok_dl.cli.download_video", side_effect=always_fail):
-        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-            with patch("tiktok_dl.cli.rotate_tor_identity", return_value=True):
-                with patch("tiktok_dl.cli.ManifestStore"):
-                    with patch("sys.argv", [
-                        "tiktok-dl", "https://tiktok.com/@u/video/1",
-                        "--cookies-file", str(tmp_cookies),
-                        "--max-attempts", "2",
-                    ]):
-                        os.chdir(tmp_path)
-                        exit_code = main()
+        with patch("tiktok_dl.cli.build_proxy_url", return_value="socks5h://g:dummy@h:9050"):
+            with patch("tiktok_dl.cli.ManifestStore"):
+                with patch("sys.argv", [
+                    "tiktok-dl", "https://tiktok.com/@u/video/1",
+                    "--cookies-file", str(tmp_cookies),
+                    "--max-attempts", "2",
+                ]):
+                    os.chdir(tmp_path)
+                    exit_code = main()
     assert exit_code == 1
 
 
@@ -305,19 +302,71 @@ def test_download_updates_manifest(tmp_cookies, tmp_path):
         {"id": "vid2", "url": "https://tiktok.com/@user/video/vid2"},
     ]
     with patch("tiktok_dl.cli.download_profile", return_value=videos):
-        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-            with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
-                mock_ms = MagicMock()
-                mock_ms.video_exists.return_value = False
-                mock_ms_class.return_value = mock_ms
-                with patch("sys.argv", [
-                    "tiktok-dl", "@user",
-                    "--cookies-file", str(tmp_cookies),
-                ]):
-                    os.chdir(tmp_path)
-                    exit_code = main()
+        with patch("tiktok_dl.cli.download_video", return_value=(0, "ok")):
+            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
+                    mock_ms = MagicMock()
+                    mock_ms.video_exists.return_value = False
+                    mock_ms_class.return_value = mock_ms
+                    with patch("sys.argv", [
+                        "tiktok-dl", "@user",
+                        "--cookies-file", str(tmp_cookies),
+                    ]):
+                        os.chdir(tmp_path)
+                        exit_code = main()
     assert exit_code == 0
     assert mock_ms.add_video.call_count == 2
+
+
+def test_profile_manifest_persists_before_later_failure(monkeypatch, tmp_cookies, tmp_path):
+    videos = [
+        {"id": "vid1", "url": "https://tiktok.com/@user/video/vid1", "title": "first"},
+        {"id": "vid2", "url": "https://tiktok.com/@user/video/vid2", "title": "second"},
+    ]
+    downloads = {"count": 0}
+
+    def fake_download_profile(**kwargs):
+        return videos
+
+    def fake_download_video(**kwargs):
+        downloads["count"] += 1
+        if downloads["count"] == 1:
+            return (0, "ok")
+        raise Exception("later failure")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *args, **kwargs: None)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
+
+    config = {
+        "cookies_file": str(tmp_cookies),
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 1,
+        "range": None,
+        "new_items": None,
+    }
+
+    with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
+        mock_ms = MagicMock()
+        mock_ms.video_exists.return_value = False
+        mock_ms_class.return_value = mock_ms
+
+        assert process_target("@user", config, manifest=mock_ms, download_dir=str(tmp_path)) is True
+
+    assert mock_ms.add_video.call_count == 2
+    # First add_video call is the successful vid1 (with status "downloaded")
+    first_call = mock_ms.add_video.call_args_list[0]
+    assert first_call.args[0] == "vid1"
+    assert first_call.args[1].get("status") == "downloaded"
+    # Second add_video call is the failed vid2 (with status "failed")
+    second_call = mock_ms.add_video.call_args_list[1]
+    assert second_call.args[0] == "vid2"
+    assert second_call.args[1].get("status") == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -326,8 +375,11 @@ def test_download_updates_manifest(tmp_cookies, tmp_path):
 
 
 def test_is_video_url():
-    assert is_video_url("https://tiktok.com/@user/video/123") is True
-    assert is_video_url("http://tiktok.com/x") is True
+    assert is_video_url("https://www.tiktok.com/@user/video/123") is True
+    assert is_video_url("https://www.tiktok.com/@user/video/123?_r=1&_t=abc") is True
+    assert is_video_url("http://www.tiktok.com/@user/video/123") is True
+    assert is_video_url("https://www.tiktok.com/@user?_r=1&_t=abc") is False
+    assert is_video_url("https://www.tiktok.com/@user") is False
     assert is_video_url("@username") is False
     assert is_video_url("username") is False
 
@@ -337,6 +389,112 @@ def test_normalize_username():
     assert normalize_username("@user") == "https://www.tiktok.com/@user"
     assert normalize_username("  user  ") == "https://www.tiktok.com/@user"
     assert normalize_username("https://www.tiktok.com/@user") == "https://www.tiktok.com/@user"
+
+
+def test_process_target_profile_url_uses_download_profile(monkeypatch):
+    calls = {"profile": 0, "video": 0}
+
+    def fake_download_profile(**kwargs):
+        calls["profile"] += 1
+        assert kwargs["username"] == "https://www.tiktok.com/@finn.oconnor64?_r=1&_t=abc"
+        return []
+
+    def fake_download_video(**kwargs):
+        calls["video"] += 1
+        raise AssertionError("download_video should not be called for profile URLs")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
+
+    config = {
+        "cookies_file": None,
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 1,
+    }
+
+    assert process_target("https://www.tiktok.com/@finn.oconnor64?_r=1&_t=abc", config) is True
+    assert calls["profile"] == 1
+    assert calls["video"] == 0
+
+
+def test_process_target_profile_retries_thumbnail_postprocess(monkeypatch, tmp_path):
+    calls = {"rename": 0}
+    thumb = tmp_path / "thumb.image"
+    thumb.write_text("data")
+
+    def fake_download_profile(**kwargs):
+        return [{"id": "v1", "url": "https://www.tiktok.com/@user/video/1"}]
+
+    def fake_rename_thumbnails(download_dir):
+        calls["rename"] += 1
+        assert download_dir == str(tmp_path)
+        if calls["rename"] == 1:
+            raise OSError("temporary thumbnail failure")
+        thumb.rename(thumb.with_suffix(".jpg"))
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kwargs: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli._rename_thumbnails", fake_rename_thumbnails)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
+
+    config = {
+        "cookies_file": None,
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 1,
+    }
+
+    assert process_target("@username", config, download_dir=str(tmp_path)) is True
+    assert calls["rename"] == 2
+    assert not thumb.exists()
+    assert thumb.with_suffix(".jpg").exists()
+
+
+def test_rename_thumbnails_replaces_existing_jpg(tmp_path):
+    thumb_image = tmp_path / "foo.image"
+    thumb_jpg = tmp_path / "foo.jpg"
+    thumb_image.write_text("image data")
+    thumb_jpg.write_text("old jpg data")
+
+    from tiktok_dl.cli import _rename_thumbnails
+
+    _rename_thumbnails(str(tmp_path))
+
+    assert not thumb_image.exists()
+    assert thumb_jpg.exists()
+    assert thumb_jpg.read_text() == "image data"
+
+
+def test_process_target_video_does_not_postprocess_thumbnails(monkeypatch, tmp_path):
+    def fake_download_video(**kwargs):
+        return (0, "ok")
+
+    def fail_postprocess(*args, **kwargs):
+        raise AssertionError("thumbnail postprocess should not run for single videos")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", fail_postprocess)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
+
+    config = {
+        "cookies_file": None,
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 1,
+    }
+
+    assert process_target("https://www.tiktok.com/@user/video/123", config, download_dir=str(tmp_path)) is True
 
 
 def test_read_targets_from_file(tmp_path):

@@ -28,6 +28,8 @@ class ManifestStore:
     
     def _init_sqlite(self):
         with sqlite3.connect(self.sqlite_path) as conn:
+            # Enable WAL mode for better concurrent read/write performance.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS videos (
                     video_id TEXT PRIMARY KEY,
@@ -47,6 +49,10 @@ class ManifestStore:
                 conn.execute("ALTER TABLE videos ADD COLUMN title TEXT DEFAULT ''")
             if "thumbnail" not in columns:
                 conn.execute("ALTER TABLE videos ADD COLUMN thumbnail TEXT DEFAULT ''")
+            if "status" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN status TEXT DEFAULT 'downloaded'")
+            if "hash" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN hash TEXT DEFAULT ''")
             conn.commit()
     
     def add_video(self, video_id: str, metadata: Dict) -> None:
@@ -77,16 +83,20 @@ class ManifestStore:
         with open(self.json_path, 'r') as f:
             records = json.load(f)
         
+        # Ensure video_id is present in the metadata written to JSON
+        record_data = dict(metadata)
+        record_data.setdefault('video_id', video_id)
+        
         # Check if video_id already exists
         exists = False
         for record in records:
             if record.get('video_id') == video_id:
-                record.update(metadata)
+                record.update(record_data)
                 exists = True
                 break
         
         if not exists:
-            records.append(metadata)
+            records.append(record_data)
         
         with open(self.json_path, 'w') as f:
             json.dump(records, f, indent=2)

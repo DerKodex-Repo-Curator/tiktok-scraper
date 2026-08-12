@@ -19,7 +19,7 @@ COPY api/ ./api/
 
 # Install into a prefix we can copy to runtime
 RUN pip install --no-cache-dir --prefix=/install \
-    "yt-dlp[default,curl-cffi]>=2024.0.0" \
+    "yt-dlp[default,curl-cffi]==2025.10.14" \
     "PySocks>=1.7" \
     "fastapi>=0.110" \
     "uvicorn>=0.30" \

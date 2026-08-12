@@ -46,12 +46,13 @@ def download_video(
     """
     cmd = [
         "yt-dlp",
-        "--proxy", proxy_url,
         "--download-archive", download_archive,
         "--output", output_template,
         "--write-thumbnail",
         "--newline",
     ]
+    if proxy_url:
+        cmd.extend(["--proxy", proxy_url])
     if _impersonate_available():
         cmd.extend(["--impersonate", "chrome"])
     if cookies_path and Path(cookies_path).exists():
@@ -91,10 +92,11 @@ def download_profile(
     
     data_cmd = [
         "yt-dlp",
-        "--proxy", proxy_url,
         "--flat-playlist",
         "--dump-json",
     ]
+    if proxy_url:
+        data_cmd.extend(["--proxy", proxy_url])
     if _impersonate_available():
         data_cmd.extend(["--impersonate", "chrome"])
     if cookies_path and Path(cookies_path).exists():

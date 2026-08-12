@@ -88,16 +88,18 @@ def test_cli_to_manifest_flow(tmp_path):
     videos = [{"id": "v1", "url": "https://tiktok.com/@u/video/v1"}]
 
     with patch("tiktok_dl.cli.download_profile", return_value=videos):
-        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-            with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
-                mock_ms = MagicMock()
-                mock_ms.video_exists.return_value = False
-                mock_ms_class.return_value = mock_ms
-                with patch("sys.argv", [
-                    "tiktok-dl", "@user", "--cookies-file", str(cookies),
-                ]):
-                    os.chdir(tmp_path)
-                    exit_code = main()
+        with patch("tiktok_dl.cli.download_video", return_value=(0, "ok")):
+            with patch("tiktok_dl.cli.build_proxy_url", return_value="socks5h://g:d@h:9050"):
+                with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                    with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
+                        mock_ms = MagicMock()
+                        mock_ms.video_exists.return_value = False
+                        mock_ms_class.return_value = mock_ms
+                        with patch("sys.argv", [
+                            "tiktok-dl", "@user", "--cookies-file", str(cookies),
+                        ]):
+                            os.chdir(tmp_path)
+                            exit_code = main()
     assert exit_code == 0
     assert mock_ms.add_video.call_count == 1
 
@@ -180,7 +182,7 @@ def test_all_core_modules_importable():
     assert hasattr(tiktok_dl, "download_video")
     assert hasattr(tiktok_dl, "download_profile")
     assert hasattr(tiktok_dl, "ManifestStore")
-    assert hasattr(tiktok_dl, "rotate_tor_identity")
+    assert hasattr(tiktok_dl, "build_proxy_url")
     assert hasattr(tiktok_dl, "retry_with_backoff")
 
 

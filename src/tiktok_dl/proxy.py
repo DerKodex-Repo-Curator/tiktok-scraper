@@ -1,6 +1,21 @@
 import socket
 import struct
+import uuid
 from typing import Optional
+
+
+PROXYTO_HOST = "proxyto.hs.sof.ar"
+PROXYTO_PORT = 9050
+PROXYTO_PASSWORD = "dummy"
+
+
+def build_proxy_url(guid: str | None = None) -> str:
+    """Build a proxyto SOCKS5 URL with a GUID dummy username.
+    Each unique guid yields a different exit IP.
+    """
+    if guid is None:
+        guid = str(uuid.uuid4())
+    return f"socks5h://{guid}:{PROXYTO_PASSWORD}@{PROXYTO_HOST}:{PROXYTO_PORT}"
 
 
 def validate_proxy(proxy_url: str) -> bool:
@@ -17,8 +32,11 @@ def validate_proxy(proxy_url: str) -> bool:
     if not proxy_url.startswith("socks5h://") and not proxy_url.startswith("socks5://"):
         raise ValueError(f"Invalid proxy URL: {proxy_url}. Must be SOCKS5.")
     
-    # Extract host and port
+    # Extract host and port (strip any userinfo)
     proxy_url = proxy_url.replace("socks5h://", "").replace("socks5://", "")
+    # Strip userinfo if present (user:pass@host:port)
+    if "@" in proxy_url:
+        proxy_url = proxy_url.split("@", 1)[1]
     if ":" in proxy_url:
         host, port = proxy_url.split(":", 1)
         port = int(port)
@@ -48,49 +66,6 @@ def validate_proxy(proxy_url: str) -> bool:
         
         return version == 0x05 and method == 0x00
     except (socket.error, socket.timeout, struct.error, ValueError):
-        return False
-    finally:
-        if sock:
-            sock.close()
-
-
-def rotate_tor_identity(control_host: str, control_port: int, password: Optional[str] = None) -> bool:
-    """
-    Rotate Tor identity by sending a NEWNYM signal to the Tor control port.
-    
-    Args:
-        control_host: Tor control port host
-        control_port: Tor control port number
-        password: Optional password for Tor control port
-        
-    Returns:
-        True if signal was sent successfully, False otherwise.
-    """
-    sock = None
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10)
-        sock.connect((control_host, control_port))
-        
-        # Send authentication if password is provided
-        if password:
-            auth_request = b"AUTHENTICATE \"\"\r\n"
-            auth_response = b"250 OK\r\n"
-            # Note: This is a simplified implementation - proper Tor authentication
-            # uses the PROXY command with username/password
-        else:
-            auth_request = b"AUTHENTICATE \"\"\r\n"
-        
-        sock.send(auth_request)
-        response = sock.recv(1024)
-        
-        # Send NEWNYM signal
-        sock.send(b"SIGNAL NEWNYM\r\n")
-        response = sock.recv(1024)
-        
-        # Check if response indicates success
-        return b"250 OK" in response
-    except (socket.error, socket.timeout):
         return False
     finally:
         if sock:

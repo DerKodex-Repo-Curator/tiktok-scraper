@@ -28,13 +28,15 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import List, Optional
 
 from .downloader import download_profile, download_video
 from .manifest import ManifestStore
-from .proxy import rotate_tor_identity
-from .retry import WatchdogError, retry_with_backoff
+from .proxy import build_proxy_url
+from .retry import retry_with_backoff
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +168,16 @@ def resolve_config(args: argparse.Namespace) -> dict:
 
 def is_video_url(target: str) -> bool:
     """Return True if target looks like a TikTok video URL."""
-    return target.startswith("http://") or target.startswith("https://")
+    target = target.strip()
+    if not target.startswith(("http://", "https://")):
+        return False
+
+    parsed = urlsplit(target)
+    if parsed.netloc not in {"tiktok.com", "www.tiktok.com", "m.tiktok.com"}:
+        return False
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    return len(path_parts) >= 3 and path_parts[0].startswith("@") and path_parts[1] == "video" and path_parts[2].isdigit()
 
 
 def normalize_username(target: str) -> str:
@@ -188,16 +199,103 @@ def normalize_username(target: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _persist_video(manifest, vid, v, profile_clean):
+    """Record a successfully downloaded video in the manifest."""
+    if manifest is None or not vid:
+        return
+    if manifest.video_exists(vid):
+        return
+    vid_str = str(vid)
+    title = v.get("title", "")
+    base_path = vid_str
+    if title:
+        base_path = f"{vid_str} {title}"
+    thumb_path = f"{profile_clean}/{base_path}.jpg"
+    manifest.add_video(
+        vid,
+        {
+            "url": v.get("url", v.get("webpage_url", "")),
+            "profile": profile_clean,
+            "title": title,
+            "status": "downloaded",
+            "thumbnail": thumb_path,
+        },
+    )
+
+
+def _mark_failed(manifest, vid, v, profile_clean, reason):
+    """Record a failed video in the manifest."""
+    if manifest is None or not vid:
+        return
+    if manifest.video_exists(vid):
+        return
+    manifest.add_video(
+        vid,
+        {
+            "url": v.get("url", v.get("webpage_url", "")),
+            "profile": profile_clean,
+            "title": v.get("title", ""),
+            "status": "failed",
+            "thumbnail": "",
+        },
+    )
+
+
+def _download_single_video(
+    vid_url,
+    cookies_file,
+    proxy_url,
+    full_output_template,
+    format_str,
+    archive_path,
+    max_attempts=5,
+):
+    """Retry a single video download up to max_attempts.
+
+    When proxy_url is truthy, each attempt rotates to a fresh proxyto GUID
+    so the exit IP changes between retries. When proxy_url is empty/None,
+    downloads go direct without any proxy.
+    """
+    use_proxy = bool(proxy_url)
+
+    def _attempt():
+        if use_proxy:
+            fresh_proxy = build_proxy_url()
+            guid = fresh_proxy.split("://", 1)[1].split(":", 1)[0] if "://" in fresh_proxy else "?"
+            print(f"[retry] {vid_url} attempt via proxy guid={guid}")
+        else:
+            fresh_proxy = ""
+            print(f"[retry] {vid_url} attempt (direct, no proxy)")
+        exit_code, output = download_video(
+            url=vid_url,
+            cookies_path=cookies_file,
+            proxy_url=fresh_proxy,
+            output_template=full_output_template,
+            format_str=format_str,
+            download_archive=archive_path,
+        )
+        if exit_code != 0:
+            raise Exception(f"download failed: {output}")
+        return output
+
+    return retry_with_backoff(_attempt, max_attempts=max_attempts)
+
+
 def process_target(
     target: str,
     config: dict,
     manifest: Optional[ManifestStore] = None,
     download_dir: str = ".",
+    progress_callback=None,
 ) -> bool:
     """
     Process a single target (URL or username).
 
     Returns True on success, False on failure.
+
+    ``progress_callback`` is optional and called as
+    ``progress_callback(downloaded, skipped, failed, total)`` after each
+    item so the API worker can update job progress live.
     """
     cookies_file = config["cookies_file"]
     if not cookies_file:
@@ -206,117 +304,102 @@ def process_target(
     proxy_url = config["proxy_url"]
     output_template = config["output_template"]
     format_str = config["format_str"]
-    timeout = config["timeout"]
     max_attempts = config["max_attempts"]
 
     archive_path = str(Path(download_dir) / "download_archive.txt")
-    # yt-dlp output template: prefix with download dir (string concat, not Path)
-    # because yt-dlp templates use %(field)s and forward slashes
     full_output_template = str(download_dir).rstrip("/") + "/" + output_template
 
-    def _download():
-        if is_video_url(target):
-            exit_code, output = download_video(
-                url=target,
-                cookies_path=cookies_file,
-                proxy_url=proxy_url,
-                output_template=full_output_template,
-                format_str=format_str,
-                download_archive=archive_path,
-            )
-            if exit_code != 0:
-                raise Exception(f"download failed: {output}")
-            return output
-        else:
-            username = normalize_username(target)
-            max_videos = config.get("range") or config.get("new_items")
-            videos = download_profile(
-                username=username,
-                cookies_path=cookies_file,
-                proxy_url=proxy_url,
-                output_template=full_output_template,
-                format_str=format_str,
-                download_archive=archive_path,
-                max_videos=max_videos,
-            )
-            # Download each enumerated video
-            for v in videos:
-                vid_url = v.get("url") or v.get("webpage_url") or ""
-                if not vid_url:
-                    continue
-                try:
-                    exit_code, output = download_video(
-                        url=vid_url,
-                        cookies_path=cookies_file,
-                        proxy_url=proxy_url,
-                        output_template=full_output_template,
-                        format_str=format_str,
-                        download_archive=archive_path,
-                    )
-                    if exit_code != 0:
-                        print(f"Warning: failed to download {vid_url}: {output}")
-                except Exception as e:
-                    print(f"Warning: error downloading {vid_url}: {e}")
+    def _report(downloaded, skipped, failed, total):
+        if progress_callback is not None:
+            try:
+                progress_callback(downloaded, skipped, failed, total)
+            except Exception:
+                pass
 
-            # Post-process: rename .image thumbnails to .jpg
-            _rename_thumbnails(download_dir)
-            if manifest is not None:
-                for v in videos:
-                    vid = v.get("id", v.get("video_id", ""))
-                    if vid and not manifest.video_exists(vid):
-                        # Derive thumbnail path from output template
-                        # yt-dlp saves thumbnail as {base}.webp or .jpg next to video
-                        vid_str = str(vid)
-                        title = v.get("title", "")
-                        # Extract profile name without @ for file paths
-                        # username is a URL like https://www.tiktok.com/@finn.oconnor64
-                        profile_name = username.replace("https://www.tiktok.com/", "").strip("/")
-                        # Remove leading @ for file paths (yt-dlp %(uploader)s doesn't include @)
-                        profile_clean = profile_name.lstrip("@")
-                        # Build expected file paths
-                        base_path = vid_str
-                        if title:
-                            base_path = f"{vid_str} {title}"
-                        # Thumbnail saved as .jpg (yt-dlp --convert-thumbnails jpg)
-                        thumb_path = f"{profile_clean}/{base_path}.jpg"
-                        manifest.add_video(
-                            vid,
-                            {
-                                "url": v.get("url", v.get("webpage_url", "")),
-                                "profile": profile_clean,
-                                "title": title,
-                                "status": "downloaded",
-                                "thumbnail": thumb_path,
-                            },
-                        )
-            return videos
-
-    attempt = 0
-    while attempt < max_attempts:
+    if is_video_url(target):
+        # --- Single video URL branch: retry with fresh proxy per attempt ---
+        _report(0, 0, 0, 1)
         try:
-            result = retry_with_backoff(
-                _download,
-                max_attempts=1,
-                watchdog_timeout=timeout,
+            _download_single_video(
+                target,
+                cookies_file,
+                proxy_url,
+                full_output_template,
+                format_str,
+                archive_path,
+                max_attempts=max_attempts,
             )
+            _report(1, 0, 0, 1)
             print(f"Success: {target}")
             return True
-        except WatchdogError:
-            attempt += 1
-            if attempt >= max_attempts:
-                print(f"Watchdog timeout on {target} after {attempt} attempts.")
-                return False
-            print(f"Watchdog timeout on {target}, rotating Tor identity...")
-            rotate_tor_identity("127.0.0.1", 9051)
         except Exception as e:
-            attempt += 1
-            if attempt >= max_attempts:
-                print(f"Failed: {target} -> {e}")
-                return False
-            print(f"Retry {attempt}/{max_attempts} for {target}: {e}")
-            rotate_tor_identity("127.0.0.1", 9051)
+            _report(0, 0, 1, 1)
+            print(f"Failed: {target} -> {e}")
+            return False
 
-    return False
+    # --- Profile branch ---
+    username = normalize_username(target)
+    profile_name = username.replace("https://www.tiktok.com/", "").strip("/")
+    profile_clean = profile_name.lstrip("@")
+    max_videos = config.get("range") or config.get("new_items")
+
+    try:
+        videos = download_profile(
+            username=username,
+            cookies_path=cookies_file,
+            proxy_url=proxy_url,
+            output_template=full_output_template,
+            format_str=format_str,
+            download_archive=archive_path,
+            max_videos=max_videos,
+        )
+    except Exception as e:
+        print(f"Failed: {target} -> profile enumeration error: {e}")
+        return False
+
+    total = len(videos)
+    downloaded = skipped = failed = 0
+    _report(downloaded, skipped, failed, total)
+
+    for v in videos:
+        vid = v.get("id", v.get("video_id", ""))
+        vid_url = v.get("url") or v.get("webpage_url") or ""
+        if not vid_url:
+            continue
+
+        # Skip already-downloaded videos
+        if manifest is not None and vid and manifest.video_exists(vid):
+            print(f"Skipped: {vid_url} (already in manifest)")
+            skipped += 1
+            _report(downloaded, skipped, failed, total)
+            continue
+
+        try:
+            _download_single_video(
+                vid_url,
+                cookies_file,
+                proxy_url,
+                full_output_template,
+                format_str,
+                archive_path,
+                max_attempts=max_attempts,
+            )
+            _persist_video(manifest, vid, v, profile_clean)
+            print(f"Downloaded: {vid_url}")
+            downloaded += 1
+        except Exception as e:
+            print(f"Warning: failed to download {vid_url}: {e}")
+            _mark_failed(manifest, vid, v, profile_clean, str(e))
+            failed += 1
+        _report(downloaded, skipped, failed, total)
+
+    # Post-process thumbnails without failing the whole profile download.
+    _postprocess_thumbnails(download_dir)
+
+    # Profile branch succeeds if enumeration completed, even if some videos
+    # failed individually (failures are recorded in the manifest).
+    print(f"Success: {target}")
+    return True
 
 
 def read_targets_from_file(file_path: str) -> List[str]:
@@ -337,9 +420,27 @@ def _rename_thumbnails(download_dir: str) -> None:
     for img_file in base.rglob("*.image"):
         jpg_path = img_file.with_suffix(".jpg")
         try:
-            img_file.rename(jpg_path)
+            img_file.replace(jpg_path)
         except OSError:
             pass
+
+
+def _postprocess_thumbnails(download_dir: str, max_attempts: int = 2) -> None:
+    """Best-effort thumbnail cleanup with a small retry."""
+    base = Path(download_dir)
+    for attempt in range(max_attempts):
+        try:
+            _rename_thumbnails(download_dir)
+        except Exception:
+            pass
+
+        if not any(base.rglob("*.image")):
+            return
+
+        if attempt + 1 < max_attempts:
+            time.sleep(0.1)
+
+    print(f"Warning: thumbnail post-process failed for {download_dir}; continuing without renamed thumbnails.")
 
 
 # ---------------------------------------------------------------------------
