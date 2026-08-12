@@ -18,6 +18,7 @@ from tiktok_dl.cli import (
     read_targets_from_file,
     _download_single_video,
     _persist_video,
+    rename_thumbnail_for_video,
 )
 
 
@@ -800,3 +801,101 @@ def test_threat_matrix_subprocess_timeout(monkeypatch, tmp_path, capsys):
     manifest.add_video.assert_not_called()
     captured = capsys.readouterr()
     assert "Failed:" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# Per-video thumbnail rename (immediate, not end-of-loop)
+# ---------------------------------------------------------------------------
+
+
+def test_rename_thumbnail_for_video_finds_image(tmp_path):
+    """rename_thumbnail_for_video renames <id>*.image to .jpg and returns the path."""
+    img = tmp_path / "7234567890 Some title.image"
+    img.write_text("thumb")
+
+    result = rename_thumbnail_for_video("7234567890", str(tmp_path))
+
+    assert result is not None
+    assert result.endswith(".jpg")
+    assert not img.exists()
+    assert (tmp_path / "7234567890 Some title.jpg").exists()
+
+
+def test_rename_thumbnail_for_video_no_image(tmp_path):
+    """rename_thumbnail_for_video returns None when no .image exists for the id."""
+    result = rename_thumbnail_for_video("123", str(tmp_path))
+    assert result is None
+
+
+def test_rename_thumbnail_for_video_empty_id(tmp_path):
+    """Empty video_id short-circuits and returns None without scanning."""
+    img = tmp_path / "x.image"
+    img.write_text("thumb")
+    assert rename_thumbnail_for_video("", str(tmp_path)) is None
+    assert img.exists()  # untouched
+
+
+def test_rename_thumbnail_per_video_called_in_profile(monkeypatch, tmp_path):
+    """Profile branch renames .image to .jpg immediately after each download,
+    not only at the end via _postprocess_thumbnails."""
+    # Real .image file in download_dir for video id "v1"
+    img = tmp_path / "v1 clip.image"
+    img.write_text("thumb")
+
+    videos = [{"id": "v1", "url": "https://tiktok.com/@u/video/v1", "title": "clip"}]
+
+    # Sentinel: _postprocess_thumbnails must NOT be the one renaming here.
+    postprocess_calls = {"n": 0}
+
+    def fail_postprocess(*a, **kw):
+        postprocess_calls["n"] += 1
+        # If this runs while the .image still exists, the per-video rename failed.
+        remaining = list(tmp_path.glob("*.image"))
+        assert not remaining, "per-video rename did not run before postprocess"
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", lambda **kw: videos)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: str(tmp_path / "v1.mp4"))
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", fail_postprocess)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None, "proxy_url": "", "output_template": "%(id)s.%(ext)s",
+        "format_str": "", "timeout": 1, "max_attempts": 1,
+    }
+
+    assert process_target("@user", config, manifest=manifest, download_dir=str(tmp_path)) is True
+    # The .image must be gone (renamed per-video) before _postprocess_thumbnails ran.
+    assert not img.exists()
+    assert (tmp_path / "v1 clip.jpg").exists()
+    assert postprocess_calls["n"] == 1
+
+
+def test_rename_thumbnail_single_video(monkeypatch, tmp_path):
+    """Single-video branch now renames .image thumbnails (previously did not)."""
+    img = tmp_path / "123 Some title.image"
+    img.write_text("thumb")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: str(tmp_path / "123.mp4"))
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails",
+                        lambda *a, **kw: pytest.fail("should not run for single videos"))
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None, "proxy_url": "", "output_template": "%(id)s.%(ext)s",
+        "format_str": "", "timeout": 1, "max_attempts": 1,
+    }
+
+    assert process_target(
+        "https://www.tiktok.com/@user/video/123",
+        config, manifest=manifest, download_dir=str(tmp_path),
+    ) is True
+    assert not img.exists()
+    assert (tmp_path / "123 Some title.jpg").exists()

@@ -369,6 +369,7 @@ def process_target(
                 _report(0, 1, 0, 1)
                 print(f"Skipped: {target} (already in archive)")
             else:
+                rename_thumbnail_for_video(_vid, download_dir)
                 _persist_video(manifest, _vid, {"url": target}, "", path=result if status == "downloaded" else "")
                 _report(1, 0, 0, 1)
                 print(f"Success: {target}")
@@ -433,6 +434,7 @@ def process_target(
                 print(f"Skipped: {vid_url} (already in archive)")
                 skipped += 1
             else:
+                rename_thumbnail_for_video(str(vid), download_dir)
                 _persist_video(manifest, vid, v, profile_clean, path=result)
                 print(f"Downloaded: {vid_url}")
                 downloaded += 1
@@ -460,6 +462,27 @@ def read_targets_from_file(file_path: str) -> List[str]:
             if line and not line.startswith("#"):
                 targets.append(line)
     return targets
+
+
+def rename_thumbnail_for_video(video_id: str, download_dir: str) -> Optional[str]:
+    """Rename the .image thumbnail to .jpg for a specific video.
+
+    Called immediately after a video downloads so the thumbnail is
+    ready even if the process dies later in the loop.
+
+    Returns the .jpg path if renamed, None if no .image found.
+    """
+    if not video_id:
+        return None
+    base = Path(download_dir)
+    for img_file in base.rglob(f"{video_id}*.image"):
+        jpg_path = img_file.with_suffix(".jpg")
+        try:
+            img_file.replace(jpg_path)
+            return str(jpg_path)
+        except OSError:
+            return None
+    return None
 
 
 def _rename_thumbnails(download_dir: str) -> None:

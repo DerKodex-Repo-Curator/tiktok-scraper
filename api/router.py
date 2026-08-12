@@ -175,7 +175,7 @@ def get_thumbnail(video_id: str):
     profile_dir = Path(output_dir) / profile
     if profile_dir.exists():
         for f in profile_dir.iterdir():
-            if f.name.startswith(video_id) and f.suffix in (".jpg", ".webp", ".png", ".jpeg"):
+            if f.name.startswith(video_id) and f.suffix in (".jpg", ".webp", ".png", ".jpeg", ".image"):
                 return FileResponse(str(f), media_type="image/jpeg")
 
     # Fallback: try the exact path from manifest

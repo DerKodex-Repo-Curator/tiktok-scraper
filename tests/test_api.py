@@ -208,3 +208,37 @@ def test_root_serves_home_page():
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
     assert "Download" in resp.text  # page title or heading
+
+
+# ---------------------------------------------------------------------------
+# Scenario: Thumbnail serving with .image extension fallback
+# ---------------------------------------------------------------------------
+
+
+def test_thumbnail_serves_image_extension(tmp_path):
+    """Scenario: GET /api/v1/thumbnail/{id} serves a .image file when the
+    thumbnail was not renamed to .jpg (per-video rename is best-effort)."""
+    c = client()
+    thumb = tmp_path / "vid123 thumb.image"
+    thumb.write_bytes(b"\xff\xd8\xff\xe0jpgdata")
+    profile_dir = tmp_path / "@user"
+    profile_dir.mkdir()
+    (profile_dir / "vid123 thumb.image").write_bytes(b"\xff\xd8\xff\xe0jpgdata")
+
+    fake_row = {"thumbnail": "@user/vid123 thumb.image", "profile": "@user"}
+
+    def fake_connect(db_path):
+        conn = MagicMock()
+        conn.__enter__ = lambda self: conn
+        conn.__exit__ = lambda self, *a: None
+        cur = MagicMock()
+        cur.fetchone.return_value = fake_row
+        conn.execute.return_value = cur
+        conn.row_factory = None
+        return conn
+
+    with patch.dict(os.environ, {"OUTPUT_DIR": str(tmp_path)}):
+        with patch("sqlite3.connect", side_effect=fake_connect):
+            with patch("pathlib.Path.exists", return_value=True):
+                resp = c.get("/api/v1/thumbnail/vid123")
+    assert resp.status_code == 200
