@@ -27,33 +27,33 @@ Chain strategy: pending
 
 ## Phase 1: Foundation (Proxy, Retry, Manifest)
 
-- [ ] 1.1 RED: Write failing test for build_proxy_url() format and uniqueness
-- [ ] 1.2 GREEN: Implement build_proxy_url() in proxy.py, remove rotate_tor_identity()
-- [ ] 1.3 RED: Write failing test for jittered backoff (max 5 attempts, early success)
-- [ ] 1.4 GREEN: Implement retry_with_backoff() in retry.py, remove watchdog
-- [ ] 1.5 RED: Write failing test for manifest status column (downloaded/skipped/failed)
-- [ ] 1.6 GREEN: Add status column and enable WAL mode in manifest.py
+- [x] 1.1 RED: Write failing test for build_proxy_url() format and uniqueness
+- [x] 1.2 GREEN: Implement build_proxy_url() in proxy.py, remove rotate_tor_identity()
+- [x] 1.3 RED: Write failing test for jittered backoff (max 5 attempts, early success)
+- [x] 1.4 GREEN: Implement retry_with_backoff() in retry.py, remove watchdog
+- [x] 1.5 RED: Write failing test for manifest status column (downloaded/skipped/failed)
+- [x] 1.6 GREEN: Add status column and enable WAL mode in manifest.py
 
 ## Phase 2: Core Implementation (Cleanup, CLI Pipeline)
 
-- [ ] 2.1 RED: Write failing test for cleanup.py test/final modes
-- [ ] 2.2 GREEN: Create cleanup.py with clean_downloads() function
-- [ ] 2.3 RED: Threat-matrix test: proxyto unavailable → item marked failed after 5 attempts
-- [ ] 2.4 RED: Threat-matrix test: subprocess timeout → item marked failed
-- [ ] 2.5 GREEN: Rework cli.py pipeline (enumerate → per-item skip/download/persist)
-- [ ] 2.6 GREEN: Update worker.py for per-item progress reporting
+- [x] 2.1 RED: Write failing test for cleanup.py test/final modes
+- [x] 2.2 GREEN: Create cleanup.py with clean_downloads() function
+- [x] 2.3 RED: Threat-matrix test: proxyto unavailable → item marked failed after 5 attempts
+- [x] 2.4 RED: Threat-matrix test: subprocess timeout → item marked failed
+- [x] 2.5 GREEN: Rework cli.py pipeline (enumerate → per-item skip/download/persist)
+- [x] 2.6 GREEN: Update worker.py for per-item progress reporting
 
 ## Phase 3: Testing / Verification
 
-- [ ] 3.1 Threat-matrix test: IP rotation not effective → log warning, continue
-- [ ] 3.2 Threat-matrix test: update existing tests + verify full suite passes
-- [ ] 3.3 Integration: pipeline skips already-downloaded items (verify manifest)
-- [ ] 3.4 Integration: pipeline persists each download immediately after success
-- [ ] 3.5 Integration: pipeline marks failed after 5 exhausted retries
+- [x] 3.1 Threat-matrix test: IP rotation not effective → log warning, continue
+- [x] 3.2 Threat-matrix test: update existing tests + verify full suite passes
+- [x] 3.3 Integration: pipeline skips already-downloaded items (verify manifest)
+- [x] 3.4 Integration: pipeline persists each download immediately after success
+- [x] 3.5 Integration: pipeline marks failed after 5 exhausted retries
 
 ## Phase 4: Cleanup / Documentation
 
-- [ ] 4.1 Update README with new rollout order and usage examples
-- [ ] 4.2 Document rollback procedure for each phase
+- [x] 4.1 Update README with new rollout order and usage examples
+- [x] 4.2 Document rollback procedure for each phase
 
 Rollback boundaries after each PR as shown in work units table.
