@@ -704,3 +704,99 @@ def test_profile_branch_stores_verified_path(monkeypatch, tmp_path):
     meta = manifest.add_video.call_args.args[1]
     assert meta["status"] == "downloaded"
     assert meta["path"] == str(f)
+
+
+# ---------------------------------------------------------------------------
+# Threat-matrix scenarios
+# ---------------------------------------------------------------------------
+
+
+def test_threat_matrix_ip_rotation_not_effective(monkeypatch, tmp_path, capsys):
+    """Scenario: proxy GUID rotates each attempt but the exit IP never changes
+    (proxyto returns the same flagged IP). All 5 attempts fail with a connection
+    error, the video is marked 'failed' in the manifest, and a warning is logged.
+    """
+    proxy_calls = []
+
+    def fake_build_proxy_url(*a, **kw):
+        proxy_calls.append(len(proxy_calls) + 1)
+        return f"socks5h://guid{len(proxy_calls)}:dummy@proxyto.hs.sof.ar:9050"
+
+    def fake_download_profile(**kwargs):
+        return [{"id": "vid1", "url": "https://tiktok.com/@u/video/vid1", "title": "t"}]
+
+    def fake_download_video(**kwargs):
+        raise ConnectionError("connection refused by upstream (exit IP flagged)")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", fake_build_proxy_url)
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *a, **kw: None)
+    import tiktok_dl.retry as retry_mod
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", retry_mod.retry_with_backoff)
+    monkeypatch.setattr("tiktok_dl.retry.time.sleep", lambda *a: None)
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None,
+        "proxy_url": "socks5h://proxyto.hs.sof.ar:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 5,
+    }
+    process_target("@user", config, manifest=manifest, download_dir=str(tmp_path))
+
+    assert len(proxy_calls) == 5
+    meta = manifest.add_video.call_args.args[1]
+    assert meta["status"] == "failed"
+    captured = capsys.readouterr()
+    assert "Warning: failed to download" in captured.out
+
+
+def test_threat_matrix_subprocess_timeout(monkeypatch, tmp_path, capsys):
+    """Scenario: download_video raises subprocess.TimeoutExpired (the 120s hard
+    timeout in downloader.py) on every attempt. Retries exhaust and the item is
+    reported as failed via the progress callback; process_target returns False.
+    """
+    import subprocess
+
+    failed_reports = []
+
+    def capture_progress(downloaded, skipped, failed, total):
+        failed_reports.append((downloaded, skipped, failed, total))
+
+    def fake_download_video(**kwargs):
+        raise subprocess.TimeoutExpired(cmd=["yt-dlp"], timeout=120)
+
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    import tiktok_dl.retry as retry_mod
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", retry_mod.retry_with_backoff)
+    monkeypatch.setattr("tiktok_dl.retry.time.sleep", lambda *a: None)
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None,
+        "proxy_url": "socks5h://h:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 3,
+    }
+    result = process_target(
+        "https://www.tiktok.com/@user/video/123",
+        config,
+        manifest=manifest,
+        download_dir=str(tmp_path),
+        progress_callback=capture_progress,
+    )
+
+    assert result is False
+    assert failed_reports[-1][2] == 1
+    manifest.add_video.assert_not_called()
+    captured = capsys.readouterr()
+    assert "Failed:" in captured.out
