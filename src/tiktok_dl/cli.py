@@ -33,7 +33,7 @@ from urllib.parse import urlsplit
 from pathlib import Path
 from typing import List, Optional
 
-from .downloader import download_profile, download_video
+from .downloader import download_profile, download_video, verify_download
 from .manifest import ManifestStore
 from .proxy import build_proxy_url
 from .retry import retry_with_backoff
@@ -199,7 +199,7 @@ def normalize_username(target: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _persist_video(manifest, vid, v, profile_clean):
+def _persist_video(manifest, vid, v, profile_clean, path="", status="downloaded"):
     """Record a successfully downloaded video in the manifest."""
     if manifest is None or not vid:
         return
@@ -217,7 +217,8 @@ def _persist_video(manifest, vid, v, profile_clean):
             "url": v.get("url", v.get("webpage_url", "")),
             "profile": profile_clean,
             "title": title,
-            "status": "downloaded",
+            "status": status,
+            "path": path,
             "thumbnail": thumb_path,
         },
     )
@@ -249,14 +250,25 @@ def _download_single_video(
     format_str,
     archive_path,
     max_attempts=5,
+    video_id="",
+    download_dir=".",
+    output_template="",
 ):
     """Retry a single video download up to max_attempts.
 
     When proxy_url is truthy, each attempt rotates to a fresh proxyto GUID
     so the exit IP changes between retries. When proxy_url is empty/None,
     downloads go direct without any proxy.
+
+    Returns a tuple ``(status, output)`` where status is one of
+    ``"downloaded"``, ``"skipped"``, or ``"failed"``. ``"skipped"`` is
+    returned when yt-dlp reports the video was already in the download
+    archive (so the caller should mark it skipped, not failed). On
+    exhausted retries the last exception propagates and the caller
+    treats the item as failed.
     """
     use_proxy = bool(proxy_url)
+    vid = video_id
 
     def _attempt():
         if use_proxy:
@@ -276,7 +288,18 @@ def _download_single_video(
         )
         if exit_code != 0:
             raise Exception(f"download failed: {output}")
-        return output
+        # yt-dlp exits 0 when the video is already in --download-archive.
+        # That is not a download — mark it skipped so the manifest stays honest.
+        lowered = output.lower()
+        if "already" in lowered and "downloaded" in lowered:
+            return ("skipped", output)
+        # yt-dlp exited 0 — verify the file actually landed on disk.
+        if vid:
+            found = verify_download(vid, download_dir, output_template)
+            if not found:
+                raise Exception(f"verify failed: file not found on disk for {vid}")
+            return ("downloaded", found)
+        return ("downloaded", output)
 
     return retry_with_backoff(_attempt, max_attempts=max_attempts)
 
@@ -319,8 +342,13 @@ def process_target(
     if is_video_url(target):
         # --- Single video URL branch: retry with fresh proxy per attempt ---
         _report(0, 0, 0, 1)
+        # Extract the video id from the URL so we can verify the file on disk.
+        _vid = ""
+        _path_parts = [p for p in urlsplit(target).path.split("/") if p]
+        if len(_path_parts) >= 3 and _path_parts[1] == "video":
+            _vid = _path_parts[2]
         try:
-            _download_single_video(
+            status, result = _download_single_video(
                 target,
                 cookies_file,
                 proxy_url,
@@ -328,9 +356,19 @@ def process_target(
                 format_str,
                 archive_path,
                 max_attempts=max_attempts,
+                video_id=_vid,
+                download_dir=download_dir,
+                output_template=output_template,
             )
-            _report(1, 0, 0, 1)
-            print(f"Success: {target}")
+            if status == "skipped":
+                if manifest is not None and _vid:
+                    _persist_video(manifest, _vid, {"url": target}, "", path="", status="skipped")
+                _report(0, 1, 0, 1)
+                print(f"Skipped: {target} (already in archive)")
+            else:
+                _persist_video(manifest, _vid, {"url": target}, "", path=result if status == "downloaded" else "")
+                _report(1, 0, 0, 1)
+                print(f"Success: {target}")
             return True
         except Exception as e:
             _report(0, 0, 1, 1)
@@ -375,7 +413,7 @@ def process_target(
             continue
 
         try:
-            _download_single_video(
+            status, result = _download_single_video(
                 vid_url,
                 cookies_file,
                 proxy_url,
@@ -383,10 +421,18 @@ def process_target(
                 format_str,
                 archive_path,
                 max_attempts=max_attempts,
+                video_id=str(vid),
+                download_dir=download_dir,
+                output_template=output_template,
             )
-            _persist_video(manifest, vid, v, profile_clean)
-            print(f"Downloaded: {vid_url}")
-            downloaded += 1
+            if status == "skipped":
+                _persist_video(manifest, vid, v, profile_clean, path="", status="skipped")
+                print(f"Skipped: {vid_url} (already in archive)")
+                skipped += 1
+            else:
+                _persist_video(manifest, vid, v, profile_clean, path=result)
+                print(f"Downloaded: {vid_url}")
+                downloaded += 1
         except Exception as e:
             print(f"Warning: failed to download {vid_url}: {e}")
             _mark_failed(manifest, vid, v, profile_clean, str(e))

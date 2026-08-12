@@ -3,7 +3,7 @@ import subprocess
 import json
 import os
 from unittest.mock import patch, MagicMock, mock_open
-from tiktok_dl.downloader import download_video, download_profile
+from tiktok_dl.downloader import download_video, download_profile, verify_download
 
 
 @pytest.fixture(autouse=True)
@@ -188,3 +188,43 @@ def test_download_video_return_tuple():
             assert isinstance(exit_code, int)
             assert isinstance(output, str)
             assert "Error" in output
+
+
+# ---------------------------------------------------------------------------
+# verify_download — post-download file verification
+# ---------------------------------------------------------------------------
+
+
+def test_verify_download_finds_file(tmp_path):
+    """verify_download finds a video file whose name starts with video_id."""
+    (tmp_path / "someuser").mkdir()
+    f = tmp_path / "someuser" / "7234567890 Some title.mp4"
+    f.write_text("data")
+    result = verify_download("7234567890", str(tmp_path), "%(uploader)s/%(id)s %(title)s.%(ext)s")
+    assert result is not None
+    assert str(f) == result
+
+
+def test_verify_download_returns_none_when_missing(tmp_path):
+    """verify_download returns None when no matching file exists."""
+    assert verify_download("7234567890", str(tmp_path), "%(id)s.%(ext)s") is None
+
+
+def test_verify_download_ignores_non_video_files(tmp_path):
+    """verify_download ignores thumbnails and text files."""
+    (tmp_path / "7234567890 Some title.jpg").write_text("thumb")
+    (tmp_path / "7234567890 Some title.txt").write_text("meta")
+    assert verify_download("7234567890", str(tmp_path), "%(id)s.%(ext)s") is None
+
+
+def test_verify_download_finds_webm(tmp_path):
+    """verify_download recognizes .webm and .mkv extensions too."""
+    f = tmp_path / "7234567890 clip.webm"
+    f.write_text("data")
+    assert verify_download("7234567890", str(tmp_path), "%(id)s.%(ext)s") == str(f)
+
+
+def test_verify_download_returns_none_when_dir_missing(tmp_path):
+    """verify_download returns None when download_dir does not exist."""
+    missing = tmp_path / "does_not_exist"
+    assert verify_download("7234567890", str(missing), "%(id)s.%(ext)s") is None

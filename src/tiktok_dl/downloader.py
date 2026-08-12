@@ -7,6 +7,25 @@ from pathlib import Path
 
 _impersonate_cache: Optional[bool] = None
 
+VIDEO_EXTENSIONS = (".mp4", ".webm", ".mkv")
+
+
+def verify_download(video_id: str, download_dir: str, output_template: str) -> Optional[str]:
+    """Verify that a video file exists on disk for the given video_id.
+
+    Searches ``download_dir`` recursively for files whose name starts with
+    ``video_id`` and has a video extension (.mp4, .webm, .mkv).
+
+    Returns the path to the found file, or None if not found.
+    """
+    base = Path(download_dir)
+    if not base.exists():
+        return None
+    for ext in VIDEO_EXTENSIONS:
+        for match in base.rglob(f"{video_id}*{ext}"):
+            return str(match)
+    return None
+
 
 def _impersonate_available() -> bool:
     """Return True if yt-dlp can impersonate Chrome (requires curl_cffi).

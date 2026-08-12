@@ -57,6 +57,8 @@ def _is_retryable_error(error: Exception) -> bool:
         "unexpected response from webpage request",
         "site maintenance", "something went wrong",
         "unable to extract", "captcha",
+        # yt-dlp exited 0 but the file is missing on disk — retry may land it
+        "verify failed", "file not found on disk",
     ]
     error_msg = str(error).lower()
     return any(pattern in error_msg for pattern in retryable_patterns)

@@ -16,6 +16,8 @@ from tiktok_dl.cli import (
     normalize_username,
     process_target,
     read_targets_from_file,
+    _download_single_video,
+    _persist_video,
 )
 
 
@@ -49,13 +51,14 @@ def test_single_video_download(tmp_cookies, tmp_path):
     """Scenario: user downloads a single video URL with cookies."""
     target = "https://tiktok.com/@user/video/123"
     with patch("tiktok_dl.cli.download_video", return_value=(0, "done")) as mock_dl:
-        with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-            with patch("sys.argv", [
-                "tiktok-dl", target,
-                "--cookies-file", str(tmp_cookies),
-            ]):
-                os.chdir(tmp_path)
-                exit_code = main()
+        with patch("tiktok_dl.cli.verify_download", return_value="/tmp/video.mp4"):
+            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                with patch("sys.argv", [
+                    "tiktok-dl", target,
+                    "--cookies-file", str(tmp_cookies),
+                ]):
+                    os.chdir(tmp_path)
+                    exit_code = main()
     assert exit_code == 0
     mock_dl.assert_called_once()
     args, kwargs = mock_dl.call_args
@@ -117,15 +120,16 @@ def test_profile_download_normalizes_username(tmp_cookies, tmp_path):
 def test_batch_download_from_file(tmp_cookies, tmp_targets_file, tmp_path):
     """Scenario: user provides --from-file with multiple targets."""
     with patch("tiktok_dl.cli.download_video", return_value=(0, "ok")) as mock_video:
-        with patch("tiktok_dl.cli.download_profile", return_value=[]) as mock_profile:
-            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-                with patch("tiktok_dl.cli.ManifestStore"):
-                    with patch("sys.argv", [
-                        "tiktok-dl", "--from-file", str(tmp_targets_file),
-                        "--cookies-file", str(tmp_cookies),
-                    ]):
-                        os.chdir(tmp_path)
-                        exit_code = main()
+        with patch("tiktok_dl.cli.verify_download", return_value="/tmp/v.mp4"):
+            with patch("tiktok_dl.cli.download_profile", return_value=[]) as mock_profile:
+                with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                    with patch("tiktok_dl.cli.ManifestStore"):
+                        with patch("sys.argv", [
+                            "tiktok-dl", "--from-file", str(tmp_targets_file),
+                            "--cookies-file", str(tmp_cookies),
+                        ]):
+                            os.chdir(tmp_path)
+                            exit_code = main()
     assert exit_code == 0
     # 2 usernames (@user1, @user3) + 1 URL
     assert mock_profile.call_count == 2
@@ -252,15 +256,16 @@ def test_watchdog_timeout_rotates_tor(tmp_cookies, tmp_path):
         return (0, "ok")
 
     with patch("tiktok_dl.cli.download_video", side_effect=fake_download):
-        with patch("tiktok_dl.cli.build_proxy_url", return_value="socks5h://g:dummy@h:9050") as mock_proxy:
-            with patch("tiktok_dl.cli.ManifestStore"):
-                with patch("sys.argv", [
-                    "tiktok-dl", "https://tiktok.com/@u/video/1",
-                    "--cookies-file", str(tmp_cookies),
-                    "--max-attempts", "3",
-                ]):
-                    os.chdir(tmp_path)
-                    exit_code = main()
+        with patch("tiktok_dl.cli.verify_download", return_value="/tmp/v.mp4"):
+            with patch("tiktok_dl.cli.build_proxy_url", return_value="socks5h://g:dummy@h:9050") as mock_proxy:
+                with patch("tiktok_dl.cli.ManifestStore"):
+                    with patch("sys.argv", [
+                        "tiktok-dl", "https://tiktok.com/@u/video/1",
+                        "--cookies-file", str(tmp_cookies),
+                        "--max-attempts", "3",
+                    ]):
+                        os.chdir(tmp_path)
+                        exit_code = main()
     assert exit_code == 0
     # build_proxy_url should be called once per attempt (2 attempts: fail then succeed)
     assert mock_proxy.call_count >= 1
@@ -303,17 +308,18 @@ def test_download_updates_manifest(tmp_cookies, tmp_path):
     ]
     with patch("tiktok_dl.cli.download_profile", return_value=videos):
         with patch("tiktok_dl.cli.download_video", return_value=(0, "ok")):
-            with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
-                with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
-                    mock_ms = MagicMock()
-                    mock_ms.video_exists.return_value = False
-                    mock_ms_class.return_value = mock_ms
-                    with patch("sys.argv", [
-                        "tiktok-dl", "@user",
-                        "--cookies-file", str(tmp_cookies),
-                    ]):
-                        os.chdir(tmp_path)
-                        exit_code = main()
+            with patch("tiktok_dl.cli.verify_download", return_value="/tmp/v.mp4"):
+                with patch("tiktok_dl.cli.retry_with_backoff", side_effect=lambda f, **kw: f()):
+                    with patch("tiktok_dl.cli.ManifestStore") as mock_ms_class:
+                        mock_ms = MagicMock()
+                        mock_ms.video_exists.return_value = False
+                        mock_ms_class.return_value = mock_ms
+                        with patch("sys.argv", [
+                            "tiktok-dl", "@user",
+                            "--cookies-file", str(tmp_cookies),
+                        ]):
+                            os.chdir(tmp_path)
+                            exit_code = main()
     assert exit_code == 0
     assert mock_ms.add_video.call_count == 2
 
@@ -336,6 +342,7 @@ def test_profile_manifest_persists_before_later_failure(monkeypatch, tmp_cookies
 
     monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
     monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: "/tmp/vid1.mp4")
     monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *args, **kwargs: None)
     monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
     monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
@@ -439,6 +446,7 @@ def test_process_target_profile_retries_thumbnail_postprocess(monkeypatch, tmp_p
 
     monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
     monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kwargs: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: str(tmp_path / "v1.mp4"))
     monkeypatch.setattr("tiktok_dl.cli._rename_thumbnails", fake_rename_thumbnails)
     monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
     monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
@@ -481,6 +489,7 @@ def test_process_target_video_does_not_postprocess_thumbnails(monkeypatch, tmp_p
         raise AssertionError("thumbnail postprocess should not run for single videos")
 
     monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: "/tmp/v.mp4")
     monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", fail_postprocess)
     monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
     monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
@@ -530,3 +539,141 @@ def test_resolve_config_cli_overrides_env():
         config = resolve_config(args)
     assert config["proxy_url"] == "socks5h://cli:1080"
     assert config["timeout"] == 30
+
+
+# ---------------------------------------------------------------------------
+# Post-download file verification — TDD scenarios
+# ---------------------------------------------------------------------------
+
+
+def test_download_marks_skipped_when_already_in_archive(monkeypatch):
+    """yt-dlp exits 0 with 'already downloaded' → status 'skipped', no retry."""
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "[download] Already downloaded video X"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    status, result = _download_single_video(
+        "https://tiktok.com/@u/video/1",
+        cookies_file=None,
+        proxy_url="socks5h://h:9050",
+        full_output_template="%(id)s.%(ext)s",
+        format_str="",
+        archive_path="/tmp/archive.txt",
+        max_attempts=3,
+        video_id="1",
+        download_dir=".",
+        output_template="%(id)s.%(ext)s",
+    )
+    assert status == "skipped"
+
+
+def test_download_marks_failed_when_exit_zero_but_no_file(monkeypatch):
+    """yt-dlp exits 0 but file missing → raises (retries), eventually 'failed'."""
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "[download] Destination: X.mp4"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    # Simulate real retry_with_backoff with max_attempts=2 — exhausts and raises.
+    import tiktok_dl.retry as retry_mod
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", retry_mod.retry_with_backoff)
+    with pytest.raises(Exception, match="verify failed"):
+        _download_single_video(
+            "https://tiktok.com/@u/video/1",
+            cookies_file=None,
+            proxy_url="",
+            full_output_template="%(id)s.%(ext)s",
+            format_str="",
+            archive_path="/tmp/archive.txt",
+            max_attempts=2,
+            video_id="1",
+            download_dir=".",
+            output_template="%(id)s.%(ext)s",
+        )
+
+
+def test_download_stores_path_in_manifest(monkeypatch, tmp_path):
+    """When file is verified, manifest entry has path set to the file path."""
+    f = tmp_path / "vid1 clip.mp4"
+    f.write_text("data")
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: str(f))
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    _persist_video(manifest, "vid1", {"url": "u", "title": "clip"}, "user", path=str(f))
+    manifest.add_video.assert_called_once()
+    meta = manifest.add_video.call_args.args[1]
+    assert meta["status"] == "downloaded"
+    assert meta["path"] == str(f)
+
+
+def test_single_video_url_skipped_when_already_in_archive(monkeypatch, tmp_path):
+    """Single-URL branch marks skipped when yt-dlp reports already-downloaded."""
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "[download] Already downloaded video X"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None,
+        "proxy_url": "",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 1,
+        "max_attempts": 1,
+    }
+    assert process_target(
+        "https://www.tiktok.com/@user/video/123",
+        config, manifest=manifest, download_dir=str(tmp_path),
+    ) is True
+    manifest.add_video.assert_called_once()
+    meta = manifest.add_video.call_args.args[1]
+    assert meta["status"] == "skipped"
+
+
+def test_profile_branch_marks_skipped_for_already_downloaded(monkeypatch, tmp_path):
+    """Profile branch: yt-dlp 'already downloaded' → manifest status 'skipped'."""
+    videos = [{"id": "v1", "url": "https://tiktok.com/@u/video/v1", "title": "t"}]
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", lambda **kw: videos)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "Already downloaded"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *a, **kw: None)
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None, "proxy_url": "", "output_template": "%(id)s.%(ext)s",
+        "format_str": "", "timeout": 1, "max_attempts": 1,
+    }
+    assert process_target("@user", config, manifest=manifest, download_dir=str(tmp_path)) is True
+    meta = manifest.add_video.call_args.args[1]
+    assert meta["status"] == "skipped"
+
+
+def test_profile_branch_stores_verified_path(monkeypatch, tmp_path):
+    """Profile branch: verified download stores the file path in manifest."""
+    f = tmp_path / "v1 title.mp4"
+    f.write_text("data")
+    videos = [{"id": "v1", "url": "https://tiktok.com/@u/video/v1", "title": "title"}]
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", lambda **kw: videos)
+    monkeypatch.setattr("tiktok_dl.cli.download_video", lambda **kw: (0, "ok"))
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: str(f))
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *a, **kw: "socks5h://g:d@h:9050")
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kw: fn())
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *a, **kw: None)
+
+    manifest = MagicMock()
+    manifest.video_exists.return_value = False
+    config = {
+        "cookies_file": None, "proxy_url": "", "output_template": "%(id)s.%(ext)s",
+        "format_str": "", "timeout": 1, "max_attempts": 1,
+    }
+    assert process_target("@user", config, manifest=manifest, download_dir=str(tmp_path)) is True
+    meta = manifest.add_video.call_args.args[1]
+    assert meta["status"] == "downloaded"
+    assert meta["path"] == str(f)
