@@ -54,6 +54,7 @@ def download_video(
     output_template: str,
     format_str: str,
     download_archive: str,
+    timeout: int = 120,
 ) -> Tuple[int, str]:
     """
     Invoke yt-dlp to download a single video.
@@ -84,7 +85,7 @@ def download_video(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120  # Hard timeout of 120 seconds
+            timeout=timeout,
         )
         return result.returncode, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
@@ -99,6 +100,7 @@ def download_profile(
     format_str: str,
     download_archive: str,
     max_videos: Optional[int] = None,
+    timeout: int = 120,
 ) -> List[Dict]:
     """
     Enumerate profile via --flat-playlist --dump-json, then download each video.
@@ -128,7 +130,7 @@ def download_profile(
             data_cmd,
             capture_output=True,
             text=True,
-            timeout=120  # Hard timeout of 120 seconds
+            timeout=timeout,
         )
         if result.returncode != 0:
             raise Exception(f"profile enumeration failed: {result.stderr}")

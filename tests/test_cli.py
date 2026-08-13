@@ -507,6 +507,55 @@ def test_process_target_video_does_not_postprocess_thumbnails(monkeypatch, tmp_p
     assert process_target("https://www.tiktok.com/@user/video/123", config, download_dir=str(tmp_path)) is True
 
 
+def test_process_target_single_video_forwards_timeout(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_download_video(**kwargs):
+        captured.update(kwargs)
+        return (0, "ok")
+
+    monkeypatch.setattr("tiktok_dl.cli.download_video", fake_download_video)
+    monkeypatch.setattr("tiktok_dl.cli.verify_download", lambda *a, **kw: "/tmp/v.mp4")
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *a, **kw: None)
+    monkeypatch.setattr("tiktok_dl.cli.retry_with_backoff", lambda fn, **kwargs: fn())
+    monkeypatch.setattr("tiktok_dl.cli.build_proxy_url", lambda *args, **kwargs: "socks5h://g:d@h:9050")
+
+    config = {
+        "cookies_file": None,
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 9,
+        "max_attempts": 1,
+    }
+
+    assert process_target("https://www.tiktok.com/@user/video/123", config, download_dir=str(tmp_path)) is True
+    assert captured["timeout"] == 9
+
+
+def test_process_target_profile_forwards_timeout(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_download_profile(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("tiktok_dl.cli.download_profile", fake_download_profile)
+    monkeypatch.setattr("tiktok_dl.cli._postprocess_thumbnails", lambda *a, **kw: None)
+
+    config = {
+        "cookies_file": None,
+        "proxy_url": "http://127.0.0.1:9050",
+        "output_template": "%(id)s.%(ext)s",
+        "format_str": "",
+        "timeout": 11,
+        "max_attempts": 1,
+    }
+
+    assert process_target("@user", config, download_dir=str(tmp_path)) is True
+    assert captured["timeout"] == 11
+
+
 def test_read_targets_from_file(tmp_path):
     f = tmp_path / "targets.txt"
     f.write_text("@a\n# comment\n\nhttps://x.com\n@b\n")

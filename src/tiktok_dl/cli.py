@@ -253,6 +253,7 @@ def _download_single_video(
     video_id="",
     download_dir=".",
     output_template="",
+    timeout=120,
 ):
     """Retry a single video download up to max_attempts.
 
@@ -285,6 +286,7 @@ def _download_single_video(
             output_template=full_output_template,
             format_str=format_str,
             download_archive=archive_path,
+            timeout=timeout,
         )
         if exit_code != 0:
             raise Exception(f"download failed: {output}")
@@ -330,6 +332,7 @@ def process_target(
     proxy_url = config["proxy_url"]
     output_template = config["output_template"]
     format_str = config["format_str"]
+    timeout = config["timeout"]
     max_attempts = config["max_attempts"]
 
     archive_path = str(Path(download_dir) / "download_archive.txt")
@@ -362,6 +365,7 @@ def process_target(
                 video_id=_vid,
                 download_dir=download_dir,
                 output_template=output_template,
+                timeout=timeout,
             )
             if status == "skipped":
                 if manifest is not None and _vid:
@@ -394,6 +398,7 @@ def process_target(
             format_str=format_str,
             download_archive=archive_path,
             max_videos=max_videos,
+            timeout=timeout,
         )
     except Exception as e:
         print(f"Failed: {target} -> profile enumeration error: {e}")

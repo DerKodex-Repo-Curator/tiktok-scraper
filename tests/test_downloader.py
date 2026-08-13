@@ -31,7 +31,8 @@ def test_download_video_calls_yt_dlp():
                     proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                     output_template="/downloads/%(id)s.%(ext)s",
                     format_str="best",
-                    download_archive="/downloads/archive.txt"
+                    download_archive="/downloads/archive.txt",
+                    timeout=5,
                 )
         
         assert exit_code == 0
@@ -43,6 +44,7 @@ def test_download_video_calls_yt_dlp():
         assert "--download-archive" in call_args
         assert "--format" in call_args
         assert "--output" in call_args
+        assert mock_run.call_args.kwargs["timeout"] == 5
 
 
 def test_download_video_without_cookies():
@@ -60,7 +62,8 @@ def test_download_video_without_cookies():
                 proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                 output_template="/downloads/%(id)s.%(ext)s",
                 format_str="best",
-                download_archive="/downloads/archive.txt"
+                download_archive="/downloads/archive.txt",
+                timeout=5,
             )
 
         assert exit_code == 0
@@ -69,6 +72,7 @@ def test_download_video_without_cookies():
         assert "--cookies" not in call_args
         assert "--proxy" in call_args
         assert "--impersonate" in call_args
+        assert mock_run.call_args.kwargs["timeout"] == 5
 
 
 def test_download_video_without_impersonate():
@@ -86,12 +90,14 @@ def test_download_video_without_impersonate():
                 proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                 output_template="/downloads/%(id)s.%(ext)s",
                 format_str="best",
-                download_archive="/downloads/archive.txt"
+                download_archive="/downloads/archive.txt",
+                timeout=5,
             )
 
         assert exit_code == 0
         call_args = mock_run.call_args[0][0]
         assert "--impersonate" not in call_args
+        assert mock_run.call_args.kwargs["timeout"] == 5
 
 
 def test_download_video_with_missing_cookies_file():
@@ -110,19 +116,21 @@ def test_download_video_with_missing_cookies_file():
                     proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                     output_template="/downloads/%(id)s.%(ext)s",
                     format_str="best",
-                    download_archive="/downloads/archive.txt"
+                    download_archive="/downloads/archive.txt",
+                    timeout=5,
                 )
 
         assert exit_code == 0
         call_args = mock_run.call_args[0][0]
         assert "--cookies" not in call_args
+        assert mock_run.call_args.kwargs["timeout"] == 5
 
 
 def test_download_video_timeout():
     """Test that download_video raises exception on timeout."""
     with patch("tiktok_dl.downloader._impersonate_available", return_value=True):
         with patch("tiktok_dl.downloader.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="yt-dlp", timeout=120)
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="yt-dlp", timeout=5)
             
             with pytest.raises(Exception, match="timeout"):
                 download_video(
@@ -131,7 +139,8 @@ def test_download_video_timeout():
                     proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                     output_template="/downloads/%(id)s.%(ext)s",
                     format_str="best",
-                    download_archive="/downloads/archive.txt"
+                    download_archive="/downloads/archive.txt",
+                    timeout=5,
                 )
 
 
@@ -159,12 +168,14 @@ def test_download_profile_enumeration():
                 proxy_url="socks5h://proxyto.hs.sof.ar:9050",
                 output_template="/downloads/%(id)s.%(ext)s",
                 format_str="best",
-                download_archive="/downloads/archive.txt"
+                download_archive="/downloads/archive.txt",
+                timeout=7,
             )
             
             assert len(result) == 2
             assert result[0]["id"] == "123"
             assert result[1]["id"] == "456"
+            assert mock_run.call_args.kwargs["timeout"] == 7
 
 
 def test_download_video_return_tuple():
